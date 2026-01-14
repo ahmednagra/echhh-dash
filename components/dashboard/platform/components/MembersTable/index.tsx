@@ -183,12 +183,14 @@ export default function MembersTable({
         getValue: (item) =>
           (item.campaign_influencer as any).past_campaigns?.length || 0,
       },
+
       {
         key: 'status',
         label: 'Agent Status',
         width: 'min-w-[120px]',
         defaultVisible: true,
-        getValue: (item) => item.campaign_influencer.status?.name || '',
+        getValue: (item) =>
+          item.status?.name || item.campaign_influencer.status?.name || '',
       },
       {
         key: 'attempts',
@@ -858,8 +860,16 @@ export default function MembersTable({
         bValue = getCpv(b);
         break;
       case 'status':
-        aValue = a.campaign_influencer.status?.name || '';
-        bValue = b.campaign_influencer.status?.name || '';
+        aValue = (
+          a.status?.name ||
+          a.campaign_influencer.status?.name ||
+          ''
+        ).toLowerCase();
+        bValue = (
+          b.status?.name ||
+          b.campaign_influencer.status?.name ||
+          ''
+        ).toLowerCase();
         break;
       case 'followers':
         aValue = a.campaign_influencer.social_account.followers_count;

@@ -18,6 +18,8 @@ import {
 import { withRoleAccess } from '@/components/auth/withRoleAccess';
 import { getOutreachManagerCampaigns } from '@/services/outreach-manager-campaigns';
 import { OutreachManagerCampaign } from '@/types/outreach-manager-campaigns';
+import { Grid, List } from 'react-feather'; // or lucide-react
+import CampaignsTable from '@/components/dashboard/campaigns/CampaignsTable';
 
 function OutreachManagerCampaignsPage() {
   const router = useRouter();

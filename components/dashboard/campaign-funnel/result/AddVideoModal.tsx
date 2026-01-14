@@ -1,7 +1,4 @@
 // src/components/dashboard/campaign-funnel/result/AddVideoModal.tsx
-// ============================================================================
-// REFACTORED: Uses centralized types, shared VideoMetricsForm, FB/LinkedIn support
-// ============================================================================
 
 'use client';
 
@@ -17,21 +14,19 @@ import {
   detectPlatformFromUrl,
   isValidPlatformUrl,
   getContentPlatformDisplay,
-  getPlatformId,
-  getWorkPlatformId,
-  platformSupportsApiFetch,
   isManualOnlyPlatform,
-  DATA_SOURCE_ENDPOINT_IDS,
-  PLATFORM_IDS,
 } from '@/constants/social-platforms';
-import InfluencerDropdown, { SelectedInfluencerData } from './InfluencerDropdown';
+import {
+  initializePlatformConfig,
+  getDynamicPlatformId,
+  getDynamicDataSourceEndpointId,
+  isPlatformConfigInitialized,
+} from '@/services/platform/platforms.service';
+import InfluencerDropdown from './InfluencerDropdown';
 import VideoMetricsForm from './VideoMetricsForm';
 import {
   VideoMetricsFormData,
   DEFAULT_FORM_DATA,
-  calculateEngagementRate,
-  getPlatformContentType,
-  getPlatformContentFormat,
   getProxiedImageUrl,
   formatNumber,
   extractPlatformPostId,
@@ -45,7 +40,7 @@ import {
 interface AddVideoModalProps {
   campaignData: Campaign | null;
   onClose: () => void;
-  onSubmit: (videoData: any) => void;
+  onSubmit: (videoData: VideoData) => void;
 }
 
 interface VideoData {
@@ -55,7 +50,41 @@ interface VideoData {
   influencer: string;
 }
 
+interface SelectedInfluencerInfo {
+  name: string;
+  username: string;
+  profilePic: string;
+}
+
+interface SubmitStatus {
+  type: 'success' | 'error' | null;
+  message: string;
+  details?: string;
+}
+
 type ModalStep = 'input' | 'preview' | 'manual_form' | 'saving';
+
+type ContentType =
+  | 'post' | 'reel' | 'story' | 'video' | 'carousel' | 'shorts'
+  | 'facebook_reel' | 'facebook_video' | 'facebook_post'
+  | 'linkedin_video' | 'linkedin_post';
+
+type ContentFormat = 'VIDEO' | 'IMAGE' | 'CAROUSEL' | 'STORY';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const INITIAL_VIDEO_DATA: VideoData = {
+  url: '',
+  title: '',
+  description: '',
+  influencer: '',
+};
+
+const INITIAL_SUBMIT_STATUS: SubmitStatus = { type: null, message: '' };
+
+const AUTO_CLOSE_DELAY_MS = 2000;
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -68,7 +97,7 @@ const determineContentType = (
   platform: ContentPlatform,
   url: string,
   isVideo: boolean
-): 'post' | 'reel' | 'story' | 'video' | 'carousel' | 'shorts' | 'facebook_reel' | 'facebook_video' | 'facebook_post' | 'linkedin_video' | 'linkedin_post' => {
+): ContentType => {
   const urlLower = url.toLowerCase();
 
   if (urlLower.includes('/shorts/')) return 'shorts';
@@ -78,29 +107,30 @@ const determineContentType = (
   if (urlLower.includes('/stories/')) return 'story';
 
   if (isVideo) {
-    switch (platform) {
-      case 'youtube': return urlLower.includes('shorts') ? 'shorts' : 'video';
-      case 'tiktok': return 'video';
-      case 'facebook': return 'facebook_video';
-      case 'linkedin': return 'linkedin_video';
-      default: return 'reel';
-    }
+    const videoTypeMap: Record<ContentPlatform, ContentType> = {
+      youtube: urlLower.includes('shorts') ? 'shorts' : 'video',
+      tiktok: 'video',
+      facebook: 'facebook_video',
+      linkedin: 'linkedin_video',
+      instagram: 'reel',
+    };
+    return videoTypeMap[platform] || 'reel';
   }
 
-  switch (platform) {
-    case 'facebook': return 'facebook_post';
-    case 'linkedin': return 'linkedin_post';
-    default: return 'post';
-  }
+  const postTypeMap: Record<ContentPlatform, ContentType> = {
+    facebook: 'facebook_post',
+    linkedin: 'linkedin_post',
+    instagram: 'post',
+    tiktok: 'post',
+    youtube: 'post',
+  };
+  return postTypeMap[platform] || 'post';
 };
 
 /**
- * Determine content format
+ * Determine content format based on URL and video flag
  */
-const determineContentFormat = (
-  url: string,
-  isVideo: boolean
-): 'VIDEO' | 'IMAGE' | 'CAROUSEL' | 'STORY' => {
+const determineContentFormat = (url: string, isVideo: boolean): ContentFormat => {
   const urlLower = url.toLowerCase();
   if (urlLower.includes('/stories/')) return 'STORY';
   if (isVideo) return 'VIDEO';
@@ -108,119 +138,24 @@ const determineContentFormat = (
 };
 
 /**
- * Transform manual form data to ContentPost format
- * 
- * CRITICAL: Uses buildUnifiedInitialMetadata to ensure manual entries
- * produce the SAME initial_metadata structure as API-fetched entries.
- * This allows backend's _create_snapshot_if_metadata_exists() to work
- * identically for both entry types.
- * 
- * @param formData - Form data from VideoMetricsForm
- * @param campaignId - Campaign UUID
- * @param selectedInfluencer - Campaign influencer UUID
- * @param platform - Detected content platform
- * @returns ContentPostCreate payload ready for API
+ * Build full content URL from shortcode/ID if needed
  */
-const transformManualToContentPost = (
-  formData: VideoMetricsFormData,
-  campaignId: string,
-  selectedInfluencer: string,
-  platform: ContentPlatform
-): ContentPostCreate => {
-  // Use centralized function for deterministic post ID extraction
-  // This ensures same URL always produces same platform_post_id for duplicate detection
-  const platformPostId = extractPlatformPostId(formData.profileUrl, platform);
+const buildContentUrl = (url: string, platform: ContentPlatform): string => {
+  if (url.startsWith('http')) return url;
 
-  const contentType = determineContentType(platform, formData.profileUrl, formData.isVideo);
-  const contentFormat = determineContentFormat(formData.profileUrl, formData.isVideo);
-
-  // Build proper URL if needed
-  let contentUrl = formData.profileUrl;
-  if (contentUrl && !contentUrl.startsWith('http')) {
-    switch (platform) {
-      case 'youtube':
-        contentUrl = `https://www.youtube.com/watch?v=${contentUrl}`;
-        break;
-      case 'tiktok':
-        contentUrl = `https://www.tiktok.com/video/${contentUrl}`;
-        break;
-      case 'facebook':
-        contentUrl = `https://www.facebook.com/videos/${contentUrl}`;
-        break;
-      case 'linkedin':
-        contentUrl = `https://www.linkedin.com/posts/${contentUrl}`;
-        break;
-      case 'instagram':
-      default:
-        contentUrl = `https://www.instagram.com/p/${contentUrl}/`;
-        break;
-    }
-  }
-
-  // Build unified initial_metadata using centralized helper
-  // This ensures manual entries match API-fetched entries structure
-  const initialMetadata = buildUnifiedInitialMetadata({
-    // Engagement metrics
-    likes: formData.likes || 0,
-    comments: formData.comments || 0,
-    shares: formData.shares || 0,
-    views: formData.views || 0,
-    plays: formData.views || 0,  // For video content, plays = views
-    saves: 0,
-    
-    // Influencer info
-    username: formData.influencerUsername || '',
-    fullName: formData.fullName || '',
-    followers: formData.followers || 0,
-    isVerified: false,
-    
-    // Platform info
-    platform: platform,
-    provider: 'manual',
-    
-    // Content metadata
-    title: formData.title || '',
-    caption: formData.description || '',
-    mediaUrl: formData.thumbnailUrl || undefined,
-    thumbnailUrl: formData.thumbnailUrl || undefined,
-    duration: formData.duration || undefined,
-    postedAt: formData.postDate || undefined,
-  });
-
-  return {
-    campaign_id: campaignId,
-    campaign_influencer_id: selectedInfluencer,
-    platform_id: getPlatformId(platform),
-    data_source_endpoint_id: isManualOnlyPlatform(platform)
-      ? DATA_SOURCE_ENDPOINT_IDS.MANUAL
-      : DATA_SOURCE_ENDPOINT_IDS.INSIGHTIQ,
-    platform_post_id: platformPostId,
-    content_url: contentUrl,
-    content_type: contentType,
-    content_format: contentFormat,
-    title: formData.title || 'Post',
-    caption: formData.description || '',
-    media_url: formData.thumbnailUrl || undefined,
-    thumbnail_url: formData.thumbnailUrl || undefined,
-    duration: formData.duration > 0 ? formData.duration : undefined,
-    hashtags: [],
-    mentions: [],
-    collaborators: [],
-    sponsors: [],
-    links: [],
-    likes_and_views_disabled: false,
-    is_pinned: false,
-    tracking_status: 'active',
-    posted_at: formData.postDate || new Date().toISOString(),
-    first_tracked_at: new Date().toISOString(),
-    last_tracked_at: new Date().toISOString(),
-    // CRITICAL: Uses unified metadata structure
-    initial_metadata: initialMetadata,
+  const urlBuilders: Record<ContentPlatform, (id: string) => string> = {
+    youtube: (id) => `https://www.youtube.com/watch?v=${id}`,
+    tiktok: (id) => `https://www.tiktok.com/video/${id}`,
+    facebook: (id) => `https://www.facebook.com/videos/${id}`,
+    linkedin: (id) => `https://www.linkedin.com/posts/${id}`,
+    instagram: (id) => `https://www.instagram.com/p/${id}/`,
   };
+
+  return urlBuilders[platform]?.(url) || url;
 };
 
 /**
- * Extract hashtags from Instagram data
+ * Extract hashtags from caption text
  */
 const extractHashtags = (data: ProcessedInstagramData): string[] => {
   const caption = data.post.caption || '';
@@ -229,12 +164,89 @@ const extractHashtags = (data: ProcessedInstagramData): string[] => {
 };
 
 /**
- * Extract mentions from Instagram data
+ * Extract mentions from caption text
  */
 const extractMentions = (data: ProcessedInstagramData): string[] => {
   const caption = data.post.caption || '';
   const matches = caption.match(/@\w+/g);
   return matches ? matches.map(mention => mention.slice(1)) : [];
+};
+
+/**
+ * Parse API error into user-friendly message
+ */
+const parseApiError = (error: unknown): { message: string; details: string } => {
+  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+  const errorMappings: Array<{ pattern: RegExp; message: string; details: string }> = [
+    {
+      pattern: /409|already exists/i,
+      message: 'Duplicate Post Detected',
+      details: 'This post has already been added to your campaign. Please try a different URL.',
+    },
+    {
+      pattern: /404.*endpoint/i,
+      message: 'Resource Not Found',
+      details: 'Manual entry endpoint not configured. Please contact support.',
+    },
+    {
+      pattern: /404.*platform/i,
+      message: 'Resource Not Found',
+      details: 'Platform not recognized. Please check the URL.',
+    },
+    {
+      pattern: /404.*influencer/i,
+      message: 'Resource Not Found',
+      details: 'Selected influencer not found. Please select a different influencer.',
+    },
+    {
+      pattern: /404|not found/i,
+      message: 'Resource Not Found',
+      details: errorMessage,
+    },
+    {
+      pattern: /401|unauthorized/i,
+      message: 'Authentication Error',
+      details: 'Your session may have expired. Please refresh the page and try again.',
+    },
+    {
+      pattern: /400/,
+      message: 'Invalid Request',
+      details: 'Please check all fields and try again.',
+    },
+    {
+      pattern: /500/,
+      message: 'Server Error',
+      details: 'Something went wrong on our end. Please try again later.',
+    },
+  ];
+
+  for (const mapping of errorMappings) {
+    if (mapping.pattern.test(errorMessage)) {
+      return { message: mapping.message, details: mapping.details };
+    }
+  }
+
+  return { message: 'Failed to Save Video', details: errorMessage };
+};
+
+/**
+ * Validate Instagram shortcode format
+ */
+const isValidInstagramCode = (value: string): boolean => {
+  return /^[a-zA-Z0-9_-]+$/.test(value) && value.length > 5;
+};
+
+/**
+ * Validate URL format
+ */
+const isValidUrl = (value: string): boolean => {
+  try {
+    new URL(value);
+    return isValidPlatformUrl(value);
+  } catch {
+    return false;
+  }
 };
 
 // ============================================================================
@@ -249,43 +261,190 @@ interface PlatformIconProps {
 const PlatformIcon: React.FC<PlatformIconProps> = ({ platform, size = 14 }) => {
   if (!platform) return null;
 
-  switch (platform) {
-    case 'instagram': return <SiInstagram size={size} />;
-    case 'tiktok': return <SiTiktok size={size} />;
-    case 'youtube': return <SiYoutube size={size} />;
-    case 'facebook': return <SiFacebook size={size} />;
-    case 'linkedin': return <SiLinkedin size={size} />;
-    default: return null;
-  }
+  const iconMap: Record<ContentPlatform, React.ReactNode> = {
+    instagram: <SiInstagram size={size} />,
+    tiktok: <SiTiktok size={size} />,
+    youtube: <SiYoutube size={size} />,
+    facebook: <SiFacebook size={size} />,
+    linkedin: <SiLinkedin size={size} />,
+  };
+
+  return <>{iconMap[platform]}</>;
 };
+
+// ============================================================================
+// STATUS BANNER COMPONENT (DRY - Used in Preview & Manual Form)
+// ============================================================================
+
+interface StatusBannerProps {
+  status: SubmitStatus;
+  onDismiss: () => void;
+}
+
+const StatusBanner: React.FC<StatusBannerProps> = ({ status, onDismiss }) => {
+  if (!status.type) return null;
+
+  const isSuccess = status.type === 'success';
+
+  return (
+    <div
+      className={`rounded-lg p-3 sm:p-4 border-2 ${
+        isSuccess ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+            isSuccess ? 'bg-green-100' : 'bg-red-100'
+          }`}
+        >
+          <svg
+            className={`w-6 h-6 sm:w-7 sm:h-7 ${isSuccess ? 'text-green-600' : 'text-red-600'}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d={isSuccess ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'}
+            />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4
+            className={`text-sm sm:text-base font-semibold ${
+              isSuccess ? 'text-green-800' : 'text-red-800'
+            }`}
+          >
+            {status.message}
+          </h4>
+          {status.details && (
+            <p
+              className={`text-xs sm:text-sm mt-1 ${
+                isSuccess ? 'text-green-700' : 'text-red-700'
+              }`}
+            >
+              {status.details}
+            </p>
+          )}
+          {isSuccess && (
+            <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
+              </svg>
+              Closing automatically...
+            </p>
+          )}
+          {!isSuccess && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="text-xs text-red-600 hover:text-red-700 font-medium mt-2 underline"
+            >
+              Dismiss and try again
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// INFLUENCER DISPLAY COMPONENT (DRY - Used in Preview & Manual Form)
+// ============================================================================
+
+interface InfluencerCompactDisplayProps {
+  influencerData: SelectedInfluencerInfo | null;
+  fallbackData?: { profile_pic_url?: string; full_name?: string; username?: string };
+  onChangeClick: () => void;
+}
+
+const InfluencerCompactDisplay: React.FC<InfluencerCompactDisplayProps> = ({
+                                                                             influencerData,
+                                                                             fallbackData,
+                                                                             onChangeClick,
+                                                                           }) => (
+  <div className="bg-green-50 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 border border-green-200 flex items-center justify-between gap-2">
+    <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 flex-1">
+      <svg
+        className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-600 flex-shrink-0"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+      <img
+        src={getProxiedImageUrl(influencerData?.profilePic || fallbackData?.profile_pic_url || '')}
+        alt="Influencer"
+        className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-white shadow-sm flex-shrink-0"
+        onError={(e) => {
+          (e.target as HTMLImageElement).src = '/user/profile-placeholder.png';
+        }}
+      />
+      <div className="min-w-0 flex-1">
+        <span className="text-xs sm:text-sm font-medium text-gray-900 truncate block">
+          {influencerData?.name || fallbackData?.full_name || 'Selected'}
+        </span>
+        <span className="text-[10px] sm:text-xs text-gray-500 truncate block">
+          @{influencerData?.username || fallbackData?.username || 'unknown'}
+        </span>
+      </div>
+      <span className="bg-green-100 text-green-800 text-[8px] sm:text-[10px] font-medium px-1 sm:px-1.5 py-0.5 rounded-full flex-shrink-0">
+        ✓ Selected
+      </span>
+    </div>
+    <button
+      type="button"
+      onClick={onChangeClick}
+      className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-700 font-medium flex-shrink-0"
+    >
+      Change
+    </button>
+  </div>
+);
 
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
 const AddVideoModal: React.FC<AddVideoModalProps> = ({
-  campaignData,
-  onClose,
-  onSubmit,
-}) => {
+                                                       campaignData,
+                                                       onClose,
+                                                       onSubmit,
+                                                     }) => {
   const campaignId = campaignData?.id || '';
 
   // ============================================================================
   // STATE
   // ============================================================================
 
-  const [formData, setFormData] = useState<VideoData>({
-    url: '',
-    title: '',
-    description: '',
-    influencer: '',
-  });
-
+  const [formData, setFormData] = useState<VideoData>(INITIAL_VIDEO_DATA);
   const [manualFormData, setManualFormData] = useState<VideoMetricsFormData>({
     ...DEFAULT_FORM_DATA,
   });
-
   const [isLoading, setIsLoading] = useState(false);
+  const [isPlatformConfigReady, setIsPlatformConfigReady] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [instagramData, setInstagramData] = useState<ProcessedInstagramData | null>(null);
   const [step, setStep] = useState<ModalStep>('input');
@@ -293,18 +452,8 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
   const [selectedInfluencer, setSelectedInfluencer] = useState<string>('');
   const [detectedPlatform, setDetectedPlatform] = useState<ContentPlatform | null>(null);
   const [showInfluencerDropdown, setShowInfluencerDropdown] = useState(true);
-  const [selectedInfluencerData, setSelectedInfluencerData] = useState<{
-    name: string;
-    username: string;
-    profilePic: string;
-  } | null>(null);
-  
-  // Success/Error state for API responses
-  const [submitStatus, setSubmitStatus] = useState<{
-    type: 'success' | 'error' | null;
-    message: string;
-    details?: string;
-  }>({ type: null, message: '' });
+  const [selectedInfluencerData, setSelectedInfluencerData] = useState<SelectedInfluencerInfo | null>(null);
+  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>(INITIAL_SUBMIT_STATUS);
 
   // ============================================================================
   // MEMOIZED VALUES
@@ -322,13 +471,34 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
   // EFFECTS
   // ============================================================================
 
+  // Initialize platform configuration on mount
+  useEffect(() => {
+    const initConfig = async () => {
+      try {
+        if (!isPlatformConfigInitialized()) {
+          console.log('🔧 AddVideoModal: Initializing platform config...');
+          await initializePlatformConfig();
+        }
+        setIsPlatformConfigReady(true);
+        console.log('✅ AddVideoModal: Platform config ready');
+      } catch (error) {
+        console.error('❌ AddVideoModal: Failed to initialize platform config:', error);
+        setErrors((prev) => ({
+          ...prev,
+          platform: 'Failed to load platform configuration. Please refresh the page.',
+        }));
+      }
+    };
+
+    initConfig();
+  }, []);
+
   // Auto-detect platform when URL changes
   useEffect(() => {
     if (formData.url.trim()) {
       const platform = detectPlatformFromUrl(formData.url);
       setDetectedPlatform(platform);
 
-      // If manual-only platform detected, pre-populate manual form
       if (platform && isManualOnlyPlatform(platform)) {
         setManualFormData((prev) => ({
           ...prev,
@@ -353,33 +523,27 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
       newErrors.url = 'Please enter a valid Instagram, TikTok, YouTube, Facebook, or LinkedIn URL';
     }
 
+    if (!isPlatformConfigReady) {
+      newErrors.platform = 'Platform configuration is loading. Please wait.';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [formData]);
-
-  const isValidUrl = (string: string): boolean => {
-    try {
-      new URL(string);
-      return isValidPlatformUrl(string);
-    } catch {
-      return false;
-    }
-  };
-
-  const isValidInstagramCode = (string: string): boolean => {
-    return /^[a-zA-Z0-9_-]+$/.test(string) && string.length > 5;
-  };
+  }, [formData.url, isPlatformConfigReady]);
 
   // ============================================================================
   // HANDLERS
   // ============================================================================
 
-  const handleInputChange = useCallback((field: keyof VideoData, value: string | number) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: '' }));
-    }
-  }, [errors]);
+  const handleInputChange = useCallback(
+    (field: keyof VideoData, value: string | number) => {
+      setFormData((prev) => ({ ...prev, [field]: value }));
+      if (errors[field]) {
+        setErrors((prev) => ({ ...prev, [field]: '' }));
+      }
+    },
+    [errors]
+  );
 
   const handleBack = useCallback(() => {
     if (step === 'manual_form') {
@@ -393,7 +557,147 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
     }
   }, [step]);
 
-  // Fetch data for API-supported platforms (IG/TikTok/YouTube)
+  const dismissStatus = useCallback(() => {
+    setSubmitStatus(INITIAL_SUBMIT_STATUS);
+  }, []);
+
+  /**
+   * Transform manual form data to ContentPost format (async for dynamic IDs)
+   */
+  const transformManualToContentPost = async (
+    data: VideoMetricsFormData,
+    platform: ContentPlatform
+  ): Promise<ContentPostCreate> => {
+    const [platformId, dataSourceEndpointId] = await Promise.all([
+      getDynamicPlatformId(platform),
+      getDynamicDataSourceEndpointId(isManualOnlyPlatform(platform) ? 'MANUAL' : 'INSIGHTIQ'),
+    ]);
+
+    const platformPostId = extractPlatformPostId(data.profileUrl, platform);
+    const contentUrl = buildContentUrl(data.profileUrl, platform);
+    const contentType = determineContentType(platform, data.profileUrl, data.isVideo);
+    const contentFormat = determineContentFormat(data.profileUrl, data.isVideo);
+
+    const initialMetadata = buildUnifiedInitialMetadata({
+      likes: data.likes || 0,
+      comments: data.comments || 0,
+      shares: data.shares || 0,
+      views: data.views || 0,
+      plays: data.views || 0,
+      saves: 0,
+      username: data.influencerUsername || '',
+      fullName: data.fullName || '',
+      followers: data.followers || 0,
+      isVerified: false,
+      platform,
+      provider: 'manual',
+      title: data.title || '',
+      caption: data.description || '',
+      mediaUrl: data.thumbnailUrl || undefined,
+      thumbnailUrl: data.thumbnailUrl || undefined,
+      duration: data.duration || undefined,
+      postedAt: data.postDate || undefined,
+    });
+
+    return {
+      campaign_id: campaignId,
+      campaign_influencer_id: selectedInfluencer,
+      platform_id: platformId,
+      data_source_endpoint_id: dataSourceEndpointId,
+      platform_post_id: platformPostId,
+      content_url: contentUrl,
+      content_type: contentType,
+      content_format: contentFormat,
+      title: data.title || 'Post',
+      caption: data.description || '',
+      media_url: data.thumbnailUrl || undefined,
+      thumbnail_url: data.thumbnailUrl || undefined,
+      duration: data.duration > 0 ? data.duration : undefined,
+      hashtags: [],
+      mentions: [],
+      collaborators: [],
+      sponsors: [],
+      links: [],
+      likes_and_views_disabled: false,
+      is_pinned: false,
+      tracking_status: 'active',
+      posted_at: data.postDate || new Date().toISOString(),
+      first_tracked_at: new Date().toISOString(),
+      last_tracked_at: new Date().toISOString(),
+      initial_metadata: initialMetadata,
+    };
+  };
+
+  /**
+   * Transform API-fetched data to ContentPost format (async for dynamic IDs)
+   */
+  const transformFetchedToContentPost = async (
+    apiData: ProcessedInstagramData,
+    platform: ContentPlatform
+  ): Promise<ContentPostCreate> => {
+    const [platformId, dataSourceEndpointId] = await Promise.all([
+      getDynamicPlatformId(platform),
+      getDynamicDataSourceEndpointId('INSIGHTIQ'),
+    ]);
+
+    const rawData = apiData.raw_response?.data?.[0];
+
+    const initialMetadata = buildUnifiedInitialMetadata({
+      likes: apiData.post.likes_count || 0,
+      comments: apiData.post.comments_count || 0,
+      shares: apiData.post.shares_count || 0,
+      views: apiData.post.view_counts || 0,
+      plays: apiData.post.play_counts || apiData.post.view_counts || 0,
+      saves: rawData?.engagement?.save_count || 0,
+      username: apiData.user.username || '',
+      fullName: apiData.user.full_name || '',
+      followers: apiData.user.followers_count || 0,
+      isVerified: apiData.user.is_verified || false,
+      profileUrl: rawData?.profile?.url || null,
+      profileImageUrl: apiData.user.profile_pic_url || rawData?.profile?.image_url || null,
+      platform,
+      provider: 'insightiq',
+      title: apiData.post.title || apiData.post.caption?.substring(0, 100) || '',
+      caption: apiData.post.caption || '',
+      mediaUrl: rawData?.media_url || apiData.post.display_url || undefined,
+      thumbnailUrl: rawData?.thumbnail_url || apiData.post.thumbnail_src || undefined,
+      duration: rawData?.duration || apiData.post.video_duration || undefined,
+      postedAt: rawData?.published_at || apiData.post.created_at || undefined,
+      rawData,
+    });
+
+    return {
+      campaign_id: campaignId,
+      campaign_influencer_id: selectedInfluencer,
+      platform_id: platformId,
+      data_source_endpoint_id: dataSourceEndpointId,
+      platform_post_id: apiData.post.post_id || apiData.post.shortcode || '',
+      content_url: formData.url,
+      content_type: determineContentType(platform, formData.url, apiData.post.is_video || false),
+      content_format: determineContentFormat(formData.url, apiData.post.is_video || false),
+      title: formData.title || apiData.post.title || apiData.post.caption?.substring(0, 100) || '',
+      caption: apiData.post.caption || formData.description || '',
+      media_url: rawData?.media_url || apiData.post.display_url || undefined,
+      thumbnail_url: rawData?.thumbnail_url || apiData.post.thumbnail_src || undefined,
+      duration: rawData?.duration || apiData.post.video_duration || undefined,
+      hashtags: extractHashtags(apiData),
+      mentions: extractMentions(apiData),
+      collaborators: [],
+      sponsors: [],
+      links: [],
+      likes_and_views_disabled: rawData?.likes_and_views_disabled ?? false,
+      is_pinned: rawData?.is_pinned ?? false,
+      tracking_status: 'active',
+      posted_at: rawData?.published_at || apiData.post.created_at || new Date().toISOString(),
+      first_tracked_at: new Date().toISOString(),
+      last_tracked_at: new Date().toISOString(),
+      initial_metadata: initialMetadata,
+    };
+  };
+
+  /**
+   * Fetch data for API-supported platforms
+   */
   const fetchPlatformData = async () => {
     if (!validateForm()) return;
 
@@ -403,12 +707,9 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
     try {
       console.log(`📡 AddVideoModal: Fetching ${detectedPlatform} data...`);
 
-      let input: { url?: string; code?: string };
-      if (isValidUrl(formData.url)) {
-        input = { url: formData.url };
-      } else {
-        input = { code: formData.url };
-      }
+      const input = isValidUrl(formData.url)
+        ? { url: formData.url }
+        : { code: formData.url };
 
       const response = await fetchInstagramPostClient({
         ...input,
@@ -420,7 +721,7 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
         throw new Error(response.message || 'Failed to fetch post data');
       }
 
-      console.log(`✅ AddVideoModal: ${detectedPlatform} data fetched successfully`);
+      console.log(`✅ AddVideoModal: ${detectedPlatform} data fetched`);
       setInstagramData(response);
       setStep('preview');
 
@@ -435,15 +736,12 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch post data';
       setFetchError(errorMessage);
 
-      // Pre-populate manual form with available data
-      if (formData.url) {
-        setManualFormData((prev) => ({
-          ...prev,
-          profileUrl: formData.url,
-          title: formData.title || 'Post',
-          description: formData.description || '',
-        }));
-      }
+      setManualFormData((prev) => ({
+        ...prev,
+        profileUrl: formData.url,
+        title: formData.title || 'Post',
+        description: formData.description || '',
+      }));
 
       setStep('manual_form');
     } finally {
@@ -451,332 +749,180 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
     }
   };
 
-  // Handle manual form submission
-  const handleManualFormSubmit = async (formData: VideoMetricsFormData) => {
-    // ========================================================================
-    // VALIDATION: Check all required fields before submission
-    // Required by backend: campaign_id, campaign_influencer_id, platform_id,
-    //                      data_source_endpoint_id, platform_post_id
-    // ========================================================================
-    
+  /**
+   * Handle successful submission
+   */
+  const handleSuccessfulSubmit = useCallback(
+    (title: string) => {
+      setSubmitStatus({
+        type: 'success',
+        message: 'Video Added Successfully!',
+        details: `"${title}" has been added to your campaign.`,
+      });
+
+      setTimeout(() => {
+        onSubmit(formData);
+        onClose();
+      }, AUTO_CLOSE_DELAY_MS);
+    },
+    [formData, onSubmit, onClose]
+  );
+
+  /**
+   * Handle manual form submission
+   */
+  const handleManualFormSubmit = async (data: VideoMetricsFormData) => {
     const validationErrors: Record<string, string> = {};
 
-    // 1. Validate Influencer Selection (campaign_influencer_id)
-    if (!selectedInfluencer || selectedInfluencer.trim() === '') {
+    if (!selectedInfluencer?.trim()) {
       validationErrors.influencer = 'Please select an influencer';
     }
 
-    // 2. Validate URL (required for content_url and platform_post_id extraction)
-    if (!formData.profileUrl || formData.profileUrl.trim() === '') {
+    if (!data.profileUrl?.trim()) {
       validationErrors.profileUrl = 'Video/Post URL is required';
     } else {
-      // Validate URL format for the platform
       const platform = detectedPlatform || 'instagram';
-      if (!isValidPlatformUrl(formData.profileUrl, platform)) {
+      if (!isValidPlatformUrl(data.profileUrl, platform)) {
         validationErrors.profileUrl = `Please enter a valid ${getContentPlatformDisplay(platform).name} URL`;
       }
     }
 
-    // 3. Validate Username (required for tracking)
-    if (!formData.influencerUsername || formData.influencerUsername.trim() === '') {
+    if (!data.influencerUsername?.trim()) {
       validationErrors.influencerUsername = 'Username is required';
     }
 
-    // If there are validation errors, show them and don't proceed
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
-      
-      // Show first error in status
-      const firstError = Object.values(validationErrors)[0];
       setSubmitStatus({
         type: 'error',
         message: 'Missing Required Fields',
-        details: firstError,
+        details: Object.values(validationErrors)[0],
       });
       return;
     }
 
-    // Clear previous errors and status
     setErrors({});
-    setSubmitStatus({ type: null, message: '' });
+    setSubmitStatus(INITIAL_SUBMIT_STATUS);
     setIsLoading(true);
     setStep('saving');
 
     try {
       console.log('💾 Saving manual content post...');
 
-      const contentPostData = transformManualToContentPost(
-        formData,
-        campaignId,
-        selectedInfluencer,
+      const contentPostData = await transformManualToContentPost(
+        data,
         detectedPlatform || 'instagram'
       );
 
-      // Log the payload for debugging
-      console.log('📤 Payload being sent:', JSON.stringify(contentPostData, null, 2));
-
-      // Validate the transformed data has required fields
-      const missingFields: string[] = [];
-      if (!contentPostData.campaign_id) missingFields.push('campaign_id');
-      if (!contentPostData.campaign_influencer_id) missingFields.push('campaign_influencer_id');
-      if (!contentPostData.platform_id) missingFields.push('platform_id');
-      if (!contentPostData.data_source_endpoint_id) missingFields.push('data_source_endpoint_id');
-      if (!contentPostData.platform_post_id) missingFields.push('platform_post_id');
+      const missingFields = ['campaign_id', 'campaign_influencer_id', 'platform_id', 'data_source_endpoint_id', 'platform_post_id']
+        .filter((field) => !contentPostData[field as keyof ContentPostCreate]);
 
       if (missingFields.length > 0) {
         throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
       }
 
       const result = await createContentPost(contentPostData);
-      console.log('✅ Manual content post saved successfully:', result);
+      console.log('✅ Manual content post saved:', result);
 
-      // Show success message
-      setSubmitStatus({
-        type: 'success',
-        message: 'Video Added Successfully!',
-        details: `"${formData.title || 'Post'}" has been added to your campaign.`,
-      });
-
-      // Auto-close after 2 seconds
-      setTimeout(() => {
-        onSubmit(formData);
-        onClose();
-      }, 2000);
-
+      handleSuccessfulSubmit(data.title || 'Post');
     } catch (error) {
       console.error('❌ Error saving manual content post:', error);
-      
-      // Parse error message for user-friendly display
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save content post';
-      let userFriendlyMessage = 'Failed to Save Video';
-      let errorDetails = errorMessage;
 
-      // Handle specific error types
-      if (errorMessage.includes('409') || errorMessage.includes('already exists')) {
-        userFriendlyMessage = 'Duplicate Post Detected';
-        errorDetails = 'This post has already been added to your campaign. Please try a different URL.';
-      } else if (errorMessage.includes('404') || errorMessage.includes('not found')) {
-        userFriendlyMessage = 'Resource Not Found';
-        if (errorMessage.toLowerCase().includes('endpoint')) {
-          errorDetails = 'Manual entry endpoint not configured. Please contact support.';
-        } else if (errorMessage.toLowerCase().includes('platform')) {
-          errorDetails = 'Platform not recognized. Please check the URL.';
-        } else if (errorMessage.toLowerCase().includes('influencer')) {
-          errorDetails = 'Selected influencer not found. Please select a different influencer.';
-        } else {
-          errorDetails = errorMessage;
-        }
-      } else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
-        userFriendlyMessage = 'Authentication Error';
-        errorDetails = 'Your session may have expired. Please refresh the page and try again.';
-      } else if (errorMessage.includes('400')) {
-        userFriendlyMessage = 'Invalid Request';
-        errorDetails = 'Please check all fields and try again.';
-      } else if (errorMessage.includes('500')) {
-        userFriendlyMessage = 'Server Error';
-        errorDetails = 'Something went wrong on our end. Please try again later.';
-      }
-
-      setSubmitStatus({
-        type: 'error',
-        message: userFriendlyMessage,
-        details: errorDetails,
-      });
-      
-      setErrors({
-        profileUrl: errorDetails,
-      });
+      const { message, details } = parseApiError(error);
+      setSubmitStatus({ type: 'error', message, details });
+      setErrors({ profileUrl: details });
       setStep('manual_form');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle preview form submission (API-fetched data)
+  /**
+   * Handle preview form submission (API-fetched data)
+   */
   const handlePreviewSubmit = async () => {
-    if (!selectedInfluencer || selectedInfluencer.trim() === '') {
+    if (!selectedInfluencer?.trim()) {
       setErrors({ influencer: 'Please select an influencer' });
       return;
     }
 
-    if (!instagramData || !instagramData.success) {
+    if (!instagramData?.success) {
       setErrors({ url: 'Please fetch post data first' });
       return;
     }
 
     setIsLoading(true);
     setStep('saving');
-    setSubmitStatus({ type: null, message: '' }); // Reset status
+    setSubmitStatus(INITIAL_SUBMIT_STATUS);
 
     try {
       console.log('💾 Saving fetched content post...');
 
-      const platform = detectedPlatform || 'instagram';
-      const rawData = instagramData.raw_response?.data?.[0];
-
-      // Build unified initial_metadata using centralized helper
-      // Spread rawData to preserve full API response, then add structured fields
-      const initialMetadata = buildUnifiedInitialMetadata({
-        // Engagement metrics from API
-        likes: instagramData.post.likes_count || 0,
-        comments: instagramData.post.comments_count || 0,
-        shares: instagramData.post.shares_count || 0,
-        views: instagramData.post.view_counts || 0,
-        plays: instagramData.post.play_counts || instagramData.post.view_counts || 0,
-        saves: rawData?.engagement?.save_count || 0,
-        
-        // Influencer info from API
-        username: instagramData.user.username || '',
-        fullName: instagramData.user.full_name || '',
-        followers: instagramData.user.followers_count || 0,
-        isVerified: instagramData.user.is_verified || false,
-        profileUrl: rawData?.profile?.url || null,
-        profileImageUrl: instagramData.user.profile_pic_url || rawData?.profile?.image_url || null,
-        
-        // Platform info
-        platform: platform,
-        provider: 'insightiq',
-        
-        // Content metadata
-        title: instagramData.post.title || instagramData.post.caption?.substring(0, 100) || '',
-        caption: instagramData.post.caption || '',
-        mediaUrl: rawData?.media_url || instagramData.post.display_url || undefined,
-        thumbnailUrl: rawData?.thumbnail_url || instagramData.post.thumbnail_src || undefined,
-        duration: rawData?.duration || instagramData.post.video_duration || undefined,
-        postedAt: rawData?.published_at || instagramData.post.created_at || undefined,
-        
-        // Preserve full API response for additional data access
-        rawData: rawData,
-      });
-      
-      const contentPostData: ContentPostCreate = {
-        campaign_id: campaignId,
-        campaign_influencer_id: selectedInfluencer,
-        platform_id: getPlatformId(platform),
-        data_source_endpoint_id: DATA_SOURCE_ENDPOINT_IDS.INSIGHTIQ,
-        platform_post_id: instagramData.post.post_id || instagramData.post.shortcode || '',
-        content_url: formData.url,
-        content_type: determineContentType(platform, formData.url, instagramData.post.is_video || false),
-        content_format: determineContentFormat(formData.url, instagramData.post.is_video || false),
-        title: formData.title || instagramData.post.title || instagramData.post.caption?.substring(0, 100) || '',
-        caption: instagramData.post.caption || formData.description || '',
-        media_url: rawData?.media_url || instagramData.post.display_url || undefined,
-        thumbnail_url: rawData?.thumbnail_url || instagramData.post.thumbnail_src || undefined,
-        duration: rawData?.duration || instagramData.post.video_duration || undefined,
-        hashtags: extractHashtags(instagramData),
-        mentions: extractMentions(instagramData),
-        collaborators: [],
-        sponsors: [],
-        links: [],
-        likes_and_views_disabled: rawData?.likes_and_views_disabled ?? false,
-        is_pinned: rawData?.is_pinned ?? false,
-        tracking_status: 'active',
-        posted_at: rawData?.published_at || instagramData.post.created_at || new Date().toISOString(),
-        first_tracked_at: new Date().toISOString(),
-        last_tracked_at: new Date().toISOString(),
-      //   initial_metadata: {
-      //     ...rawData,
-      //     engagement_snapshot: {
-      //       likes: instagramData.post.likes_count || 0,
-      //       comments: instagramData.post.comments_count || 0,
-      //       views: instagramData.post.view_counts || 0,
-      //       plays: instagramData.post.play_counts || 0,
-      //       shares: instagramData.post.shares_count || 0,
-      //     },
-      //     platform_info: {
-      //       platform: platform,
-      //       provider: 'insightiq',
-      //     },
-      //     user_snapshot: {
-      //       username: instagramData.user.username || null,
-      //       full_name: instagramData.user.full_name || null,
-      //       followers_count: instagramData.user.followers_count || 0,
-      //       is_verified: instagramData.user.is_verified || false,
-      //     },
-      //   },
-      // };
-        initial_metadata: initialMetadata,
-      };
-
+      const contentPostData = await transformFetchedToContentPost(
+        instagramData,
+        detectedPlatform || 'instagram'
+      );
 
       const result = await createContentPost(contentPostData);
-      console.log('✅ Content post saved successfully:', result);
+      console.log('✅ Content post saved:', result);
 
-      // Show success message
-      setSubmitStatus({
-        type: 'success',
-        message: 'Video Added Successfully!',
-        details: `"${formData.title || 'Post'}" has been added to your campaign.`,
-      });
-
-      // Auto-close after 2 seconds
-      setTimeout(() => {
-        onSubmit(formData);
-        onClose();
-      }, 2000);
-
+      handleSuccessfulSubmit(formData.title || 'Post');
     } catch (error) {
       console.error('❌ Error saving content post:', error);
-      
-      // Parse error message for user-friendly display
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save content post';
-      let userFriendlyMessage = 'Failed to Save Video';
-      let errorDetails = errorMessage;
 
-      // Handle specific error types
-      if (errorMessage.includes('409') || errorMessage.includes('already exists')) {
-        userFriendlyMessage = 'Duplicate Post Detected';
-        errorDetails = 'This post has already been added to your campaign. Please try a different URL.';
-      } else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
-        userFriendlyMessage = 'Authentication Error';
-        errorDetails = 'Your session may have expired. Please refresh the page and try again.';
-      } else if (errorMessage.includes('400')) {
-        userFriendlyMessage = 'Invalid Request';
-        errorDetails = 'Please check the video URL and try again.';
-      } else if (errorMessage.includes('500')) {
-        userFriendlyMessage = 'Server Error';
-        errorDetails = 'Something went wrong on our end. Please try again later.';
-      }
-
-      setSubmitStatus({
-        type: 'error',
-        message: userFriendlyMessage,
-        details: errorDetails,
-      });
-      setStep('preview'); // Go back to preview to show error
+      const { message, details } = parseApiError(error);
+      setSubmitStatus({ type: 'error', message, details });
+      setStep('preview');
+    } finally {
       setIsLoading(false);
-      return;
     }
-    
-    setIsLoading(false);
   };
 
-  // Main form submit handler
+  /**
+   * Main form submit handler
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (step === 'input') {
-      // Check if manual-only platform
       if (detectedPlatform && isManualOnlyPlatform(detectedPlatform)) {
-        // Route directly to manual form
-        setManualFormData((prev) => ({
-          ...prev,
-          profileUrl: formData.url,
-        }));
+        setManualFormData((prev) => ({ ...prev, profileUrl: formData.url }));
         setStep('manual_form');
         return;
       }
-
-      // API-supported platform - fetch data
       await fetchPlatformData();
       return;
     }
 
     if (step === 'preview') {
       await handlePreviewSubmit();
-      return;
     }
   };
+
+  /**
+   * Handle influencer selection
+   */
+  const handleInfluencerSelect = useCallback(
+    (influencerData: { name: string; username: string; profilePicUrl: string } | null) => {
+      if (influencerData) {
+        setSelectedInfluencerData({
+          name: influencerData.name,
+          username: influencerData.username,
+          profilePic: influencerData.profilePicUrl,
+        });
+        handleInputChange('influencer', influencerData.name);
+        setManualFormData((prev) => ({
+          ...prev,
+          influencerUsername: influencerData.username,
+          fullName: influencerData.name,
+        }));
+        setShowInfluencerDropdown(false);
+      } else {
+        setSelectedInfluencerData(null);
+      }
+    },
+    [handleInputChange]
+  );
 
   // ============================================================================
   // RENDER: Input Step
@@ -809,23 +955,19 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
           </p>
         )}
 
-        {/* Platform Detection Badge */}
         {detectedPlatform && platformDisplay && (
           <div className="mt-3 flex items-center gap-2">
             <span className="text-sm text-gray-500">Detected:</span>
             <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-white ${platformDisplay.bgClass}`}>
               <PlatformIcon platform={detectedPlatform} size={12} />
               <span>{platformDisplay.name}</span>
-              {isManualOnly && (
-                <span className="ml-1 text-xs opacity-75">(Manual Entry)</span>
-              )}
+              {isManualOnly && <span className="ml-1 text-xs opacity-75">(Manual Entry)</span>}
             </div>
           </div>
         )}
       </div>
 
-      {/* Manual Entry Notice for FB/LinkedIn */}
-      {isManualOnly && (
+      {isManualOnly ? (
         <div className="bg-blue-50 rounded-lg p-4 flex items-start space-x-3">
           <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -833,15 +975,12 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
           <div>
             <p className="text-sm font-medium text-blue-900">Manual Entry Required</p>
             <p className="text-sm text-blue-800 mt-1">
-              {detectedPlatform === 'facebook' ? 'Facebook' : 'LinkedIn'} posts require manual data entry. 
-              Click "Continue" to enter the post metrics manually.
+              {detectedPlatform === 'facebook' ? 'Facebook' : 'LinkedIn'} posts require manual data entry.
+              Click &quot;Continue&quot; to enter the post metrics manually.
             </p>
           </div>
         </div>
-      )}
-
-      {/* Info box for API-supported platforms */}
-      {!isManualOnly && (
+      ) : (
         <div className="bg-blue-50 rounded-lg p-4 flex items-start space-x-3">
           <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -849,21 +988,12 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
           <div>
             <p className="text-sm font-medium text-blue-900">Supported Platforms:</p>
             <ul className="text-sm text-blue-800 mt-1 space-y-1">
-              <li className="flex items-center gap-1">
-                <SiInstagram size={12} /> Instagram
-              </li>
-              <li className="flex items-center gap-1">
-                <SiTiktok size={12} /> TikTok
-              </li>
-              <li className="flex items-center gap-1">
-                <SiYoutube size={12} /> YouTube
-              </li>
-              <li className="flex items-center gap-1">
-                <SiFacebook size={12} /> Facebook
-              </li>
-              <li className="flex items-center gap-1">
-                <SiLinkedin size={12} /> LinkedIn
-              </li>
+              {(['instagram', 'tiktok', 'youtube', 'facebook', 'linkedin'] as ContentPlatform[]).map((p) => (
+                <li key={p} className="flex items-center gap-1">
+                  <PlatformIcon platform={p} size={12} />
+                  {getContentPlatformDisplay(p).name}
+                </li>
+              ))}
             </ul>
           </div>
         </div>
@@ -872,7 +1002,7 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
   );
 
   // ============================================================================
-  // RENDER: Preview Step (for API-fetched data)
+  // RENDER: Preview Step
   // ============================================================================
 
   const renderPreviewStep = () => {
@@ -880,81 +1010,25 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
 
     return (
       <div className="space-y-2 sm:space-y-3">
-        {/* Success/Error Status Banner */}
-        {submitStatus.type && (
-          <div
-            className={`rounded-lg p-3 sm:p-4 border-2 ${
-              submitStatus.type === 'success'
-                ? 'bg-green-50 border-green-300'
-                : 'bg-red-50 border-red-300'
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              {submitStatus.type === 'success' ? (
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-6 h-6 sm:w-7 sm:h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              ) : (
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-6 h-6 sm:w-7 sm:h-7 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <h4 className={`text-sm sm:text-base font-semibold ${
-                  submitStatus.type === 'success' ? 'text-green-800' : 'text-red-800'
-                }`}>
-                  {submitStatus.message}
-                </h4>
-                {submitStatus.details && (
-                  <p className={`text-xs sm:text-sm mt-1 ${
-                    submitStatus.type === 'success' ? 'text-green-700' : 'text-red-700'
-                  }`}>
-                    {submitStatus.details}
-                  </p>
-                )}
-                {submitStatus.type === 'success' && (
-                  <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
-                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Closing automatically...
-                  </p>
-                )}
-                {submitStatus.type === 'error' && (
-                  <button
-                    type="button"
-                    onClick={() => setSubmitStatus({ type: null, message: '' })}
-                    className="text-xs text-red-600 hover:text-red-700 font-medium mt-2 underline"
-                  >
-                    Dismiss and try again
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        <StatusBanner status={submitStatus} onDismiss={dismissStatus} />
 
-        {/* Instagram Post Data Section - Responsive */}
+        {/* Platform Post Data Section */}
         <div className="bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50 rounded-lg sm:rounded-xl p-2 sm:p-3 border border-purple-200">
-          {/* Header */}
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-xs sm:text-sm font-semibold text-gray-800 flex items-center">
               <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 flex items-center justify-center mr-1.5 sm:mr-2 flex-shrink-0">
-                <SiInstagram className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-white" />
+                <PlatformIcon platform={detectedPlatform || 'instagram'} size={12} />
               </div>
-              <span className="truncate">{detectedPlatform ? getContentPlatformDisplay(detectedPlatform).name : 'Instagram'} Post</span>
+              <span className="truncate">
+                {detectedPlatform ? getContentPlatformDisplay(detectedPlatform).name : 'Instagram'} Post
+              </span>
             </h4>
             <span className="bg-green-100 text-green-800 text-[8px] sm:text-[10px] font-medium px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
               ✓ Fetched
             </span>
           </div>
 
-          {/* User Profile - Responsive */}
+          {/* User Profile */}
           <div className="bg-white rounded-lg p-2 mb-2 border border-gray-100">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center space-x-2 min-w-0 flex-1">
@@ -980,21 +1054,24 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
               </div>
               <div className="flex gap-2 sm:gap-3 text-center flex-shrink-0">
                 <div>
-                  <p className="text-[10px] sm:text-xs font-semibold text-gray-900">{formatNumber(instagramData.user.followers_count || 0)}</p>
+                  <p className="text-[10px] sm:text-xs font-semibold text-gray-900">
+                    {formatNumber(instagramData.user.followers_count || 0)}
+                  </p>
                   <p className="text-[8px] sm:text-[10px] text-gray-500">Followers</p>
                 </div>
                 <div className="hidden sm:block">
-                  <p className="text-xs font-semibold text-gray-900">{formatNumber(instagramData.user.posts_count || 0)}</p>
+                  <p className="text-xs font-semibold text-gray-900">
+                    {formatNumber(instagramData.user.posts_count || 0)}
+                  </p>
                   <p className="text-[10px] text-gray-500">Posts</p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Post Content - Responsive Grid */}
+          {/* Post Metrics */}
           <div className="bg-white rounded-lg p-2 border border-gray-100">
             <div className="flex gap-2">
-              {/* Thumbnail */}
               {(instagramData.post.thumbnail_src || instagramData.post.display_url) && (
                 <img
                   src={getProxiedImageUrl(instagramData.post.thumbnail_src || instagramData.post.display_url || '')}
@@ -1005,48 +1082,27 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
                   }}
                 />
               )}
-              {/* Metrics Grid - 2x2 on mobile, 4x1 on larger screens */}
               <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-1">
-                <div className="text-center p-1 sm:p-1.5 bg-red-50 rounded">
-                  <p className="text-[8px] sm:text-[10px] text-gray-500 flex items-center justify-center gap-0.5">
-                    <svg className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-red-500" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                    </svg>
-                    <span className="hidden sm:inline">Likes</span>
-                  </p>
-                  <p className="text-[10px] sm:text-xs font-semibold text-gray-900">{formatNumber(instagramData.post.likes_count || 0)}</p>
-                </div>
-                <div className="text-center p-1 sm:p-1.5 bg-blue-50 rounded">
-                  <p className="text-[8px] sm:text-[10px] text-gray-500 flex items-center justify-center gap-0.5">
-                    <svg className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                    <span className="hidden sm:inline">Comments</span>
-                  </p>
-                  <p className="text-[10px] sm:text-xs font-semibold text-gray-900">{formatNumber(instagramData.post.comments_count || 0)}</p>
-                </div>
-                <div className="text-center p-1 sm:p-1.5 bg-yellow-50 rounded">
-                  <p className="text-[8px] sm:text-[10px] text-gray-500 flex items-center justify-center gap-0.5">
-                    <svg className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-                    </svg>
-                    <span className="hidden sm:inline">Shares</span>
-                  </p>
-                  <p className="text-[10px] sm:text-xs font-semibold text-gray-900">{formatNumber(instagramData.post.shares_count || 0)}</p>
-                </div>
-                <div className="text-center p-1 sm:p-1.5 bg-green-50 rounded">
-                  <p className="text-[8px] sm:text-[10px] text-gray-500 flex items-center justify-center gap-0.5">
-                    <svg className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    <span className="hidden sm:inline">Views</span>
-                  </p>
-                  <p className="text-[10px] sm:text-xs font-semibold text-gray-900">{formatNumber(instagramData.post.view_counts || instagramData.post.play_counts || 0)}</p>
-                </div>
+                {[
+                  { label: 'Likes', value: instagramData.post.likes_count, color: 'red', icon: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z' },
+                  { label: 'Comments', value: instagramData.post.comments_count, color: 'blue', icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
+                  { label: 'Shares', value: instagramData.post.shares_count, color: 'yellow', icon: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z' },
+                  { label: 'Views', value: instagramData.post.view_counts || instagramData.post.play_counts, color: 'green', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+                ].map((metric) => (
+                  <div key={metric.label} className={`text-center p-1 sm:p-1.5 bg-${metric.color}-50 rounded`}>
+                    <p className="text-[8px] sm:text-[10px] text-gray-500 flex items-center justify-center gap-0.5">
+                      <svg className={`w-2 h-2 sm:w-2.5 sm:h-2.5 text-${metric.color}-500`} fill={metric.label === 'Likes' ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={metric.icon} />
+                      </svg>
+                      <span className="hidden sm:inline">{metric.label}</span>
+                    </p>
+                    <p className="text-[10px] sm:text-xs font-semibold text-gray-900">
+                      {formatNumber(metric.value || 0)}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
-            {/* Caption - Hidden on very small screens */}
             {instagramData.post.caption && (
               <div className="mt-2 pt-2 border-t border-gray-100 hidden sm:block">
                 <p className="text-[10px] text-gray-600 line-clamp-2">{instagramData.post.caption}</p>
@@ -1055,32 +1111,20 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
           </div>
         </div>
 
-        {/* Influencer Selection - Responsive */}
+        {/* Influencer Selection */}
         {campaignData && (
           showInfluencerDropdown || !selectedInfluencer ? (
             <div className="bg-gray-50 rounded-lg p-2 sm:p-3 border border-gray-200">
               <InfluencerDropdown
                 campaignData={campaignData}
                 value={selectedInfluencer}
-                onChange={(campaignInfluencerId) => {
-                  setSelectedInfluencer(campaignInfluencerId);
+                onChange={(id) => {
+                  setSelectedInfluencer(id);
                   if (errors.influencer) {
                     setErrors((prev) => ({ ...prev, influencer: '' }));
                   }
                 }}
-                onInfluencerSelect={(influencerData) => {
-                  if (influencerData) {
-                    setSelectedInfluencerData({
-                      name: influencerData.name,
-                      username: influencerData.username,
-                      profilePic: influencerData.profilePicUrl,
-                    });
-                    handleInputChange('influencer', influencerData.name);
-                    setShowInfluencerDropdown(false);
-                  } else {
-                    setSelectedInfluencerData(null);
-                  }
-                }}
+                onInfluencerSelect={handleInfluencerSelect}
                 error={errors.influencer}
                 videoResult={instagramData}
                 renderMode="dropdown"
@@ -1088,47 +1132,18 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
               />
             </div>
           ) : (
-            /* Compact Single-Row Display - Responsive */
-            <div className="bg-green-50 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 border border-green-200 flex items-center justify-between gap-2">
-              <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 flex-1">
-                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <img
-                  src={getProxiedImageUrl(selectedInfluencerData?.profilePic || instagramData?.user?.profile_pic_url || '')}
-                  alt="Influencer"
-                  className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-white shadow-sm flex-shrink-0"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/user/profile-placeholder.png';
-                  }}
-                />
-                <div className="min-w-0 flex-1">
-                  <span className="text-xs sm:text-sm font-medium text-gray-900 truncate block">
-                    {selectedInfluencerData?.name || instagramData?.user?.full_name || 'Selected'}
-                  </span>
-                  <span className="text-[10px] sm:text-xs text-gray-500 truncate block">
-                    @{selectedInfluencerData?.username || instagramData?.user?.username || 'unknown'}
-                  </span>
-                </div>
-                <span className="bg-green-100 text-green-800 text-[8px] sm:text-[10px] font-medium px-1 sm:px-1.5 py-0.5 rounded-full flex-shrink-0 hidden xs:inline-flex">
-                  🎯 Matched
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowInfluencerDropdown(true)}
-                className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-700 font-medium flex-shrink-0"
-              >
-                Change
-              </button>
-            </div>
+            <InfluencerCompactDisplay
+              influencerData={selectedInfluencerData}
+              fallbackData={instagramData?.user}
+              onChangeClick={() => setShowInfluencerDropdown(true)}
+            />
           )
         )}
         {errors.influencer && !showInfluencerDropdown && (
           <p className="text-red-500 text-[10px] sm:text-xs mt-1">{errors.influencer}</p>
         )}
 
-        {/* Form Fields - Responsive Grid */}
+        {/* Form Fields */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
           <div className="sm:col-span-2">
             <label htmlFor="videoTitle" className="block text-[10px] sm:text-xs font-medium text-gray-700 mb-0.5 sm:mb-1">
@@ -1143,7 +1158,6 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
               className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 text-xs sm:text-sm"
             />
           </div>
-
           <div>
             <label htmlFor="influencer" className="block text-[10px] sm:text-xs font-medium text-gray-700 mb-0.5 sm:mb-1">
               Influencer Name *
@@ -1157,7 +1171,6 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
               className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 text-xs sm:text-sm"
             />
           </div>
-
           <div className="sm:col-span-2">
             <label htmlFor="description" className="block text-[10px] sm:text-xs font-medium text-gray-700 mb-0.5 sm:mb-1">
               Description <span className="text-gray-400">(Optional)</span>
@@ -1182,64 +1195,7 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
 
   const renderManualFormStep = () => (
     <div className="space-y-4 sm:space-y-6">
-      {/* Success/Error Status Banner */}
-      {submitStatus.type && (
-        <div
-          className={`rounded-lg p-3 sm:p-4 border-2 ${
-            submitStatus.type === 'success'
-              ? 'bg-green-50 border-green-300'
-              : 'bg-red-50 border-red-300'
-          }`}
-        >
-          <div className="flex items-start gap-3">
-            {submitStatus.type === 'success' ? (
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                <svg className="w-6 h-6 sm:w-7 sm:h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            ) : (
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                <svg className="w-6 h-6 sm:w-7 sm:h-7 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <h4 className={`text-sm sm:text-base font-semibold ${
-                submitStatus.type === 'success' ? 'text-green-800' : 'text-red-800'
-              }`}>
-                {submitStatus.message}
-              </h4>
-              {submitStatus.details && (
-                <p className={`text-xs sm:text-sm mt-1 ${
-                  submitStatus.type === 'success' ? 'text-green-700' : 'text-red-700'
-                }`}>
-                  {submitStatus.details}
-                </p>
-              )}
-              {submitStatus.type === 'success' && (
-                <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
-                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Closing automatically...
-                </p>
-              )}
-              {submitStatus.type === 'error' && (
-                <button
-                  type="button"
-                  onClick={() => setSubmitStatus({ type: null, message: '' })}
-                  className="text-xs text-red-600 hover:text-red-700 font-medium mt-2 underline"
-                >
-                  Dismiss and try again
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <StatusBanner status={submitStatus} onDismiss={dismissStatus} />
 
       {/* Platform Badge */}
       {detectedPlatform && (
@@ -1262,83 +1218,36 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
         </div>
       )}
 
-      {/* Influencer Selection - Collapsible like Preview Step */}
+      {/* Influencer Selection */}
       {campaignData && (
         showInfluencerDropdown || !selectedInfluencer ? (
           <div className="bg-gray-50 rounded-lg p-2 sm:p-3 border border-gray-200">
             <InfluencerDropdown
               campaignData={campaignData}
               value={selectedInfluencer}
-              onChange={(campaignInfluencerId) => {
-                setSelectedInfluencer(campaignInfluencerId);
+              onChange={(id) => {
+                setSelectedInfluencer(id);
                 if (errors.influencer) {
                   setErrors((prev) => ({ ...prev, influencer: '' }));
                 }
               }}
-              onInfluencerSelect={(influencerData) => {
-                if (influencerData) {
-                  setSelectedInfluencerData({
-                    name: influencerData.name,
-                    username: influencerData.username,
-                    profilePic: influencerData.profilePicUrl,
-                  });
-                  // Update manual form data with influencer info
-                  setManualFormData((prev) => ({
-                    ...prev,
-                    influencerUsername: influencerData.username,
-                    fullName: influencerData.name,
-                  }));
-                  // Auto-collapse after selection
-                  setShowInfluencerDropdown(false);
-                }
-              }}
+              onInfluencerSelect={handleInfluencerSelect}
               error={errors.influencer}
               renderMode="dropdown"
               platform={detectedPlatform}
             />
           </div>
         ) : (
-          /* Compact Single-Row Display when influencer is selected */
-          <div className="bg-green-50 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 border border-green-200 flex items-center justify-between gap-2">
-            <div className="flex items-center space-x-1.5 sm:space-x-2 min-w-0 flex-1">
-              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <img
-                src={getProxiedImageUrl(selectedInfluencerData?.profilePic || '')}
-                alt="Influencer"
-                className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover border border-white shadow-sm flex-shrink-0"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/user/profile-placeholder.png';
-                }}
-              />
-              <div className="min-w-0 flex-1">
-                <span className="text-xs sm:text-sm font-medium text-gray-900 truncate block">
-                  {selectedInfluencerData?.name || 'Selected'}
-                </span>
-                <span className="text-[10px] sm:text-xs text-gray-500 truncate block">
-                  @{selectedInfluencerData?.username || 'unknown'}
-                </span>
-              </div>
-              <span className="bg-green-100 text-green-800 text-[8px] sm:text-[10px] font-medium px-1 sm:px-1.5 py-0.5 rounded-full flex-shrink-0">
-                ✓ Selected
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowInfluencerDropdown(true)}
-              className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-700 font-medium flex-shrink-0"
-            >
-              Change
-            </button>
-          </div>
+          <InfluencerCompactDisplay
+            influencerData={selectedInfluencerData}
+            onChangeClick={() => setShowInfluencerDropdown(true)}
+          />
         )
       )}
       {errors.influencer && !showInfluencerDropdown && (
         <p className="text-red-500 text-[10px] sm:text-xs mt-1">{errors.influencer}</p>
       )}
 
-      {/* Shared Video Metrics Form */}
       <VideoMetricsForm
         mode="manual_add"
         platform={detectedPlatform}
@@ -1354,86 +1263,74 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
   );
 
   // ============================================================================
-  // RENDER: Saving Step (Loading and Success Animation)
+  // RENDER: Saving Step
   // ============================================================================
 
-  const renderSavingStep = () => {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 sm:py-16 px-4">
-        {submitStatus.type === 'success' ? (
-          // Success Animation
-          <div className="text-center">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
-              <svg className="w-8 h-8 sm:w-10 sm:h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+  const renderSavingStep = () => (
+    <div className="flex flex-col items-center justify-center py-12 sm:py-16 px-4">
+      {submitStatus.type === 'success' ? (
+        <div className="text-center">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
+            <svg className="w-8 h-8 sm:w-10 sm:h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">{submitStatus.message}</h3>
+          <p className="text-sm text-gray-600 mb-4">{submitStatus.details}</p>
+          <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Closing automatically...
+          </div>
+        </div>
+      ) : (
+        <div className="text-center">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 relative">
+            <div className="absolute inset-0 rounded-full border-4 border-pink-200" />
+            <div className="absolute inset-0 rounded-full border-4 border-pink-500 border-t-transparent animate-spin" />
+            <div className="absolute inset-3 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 flex items-center justify-center">
+              <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
             </div>
-            <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
-              {submitStatus.message}
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              {submitStatus.details}
-            </p>
-            <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Closing automatically...
-            </div>
           </div>
-        ) : (
-          // Loading Animation
-          <div className="text-center">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 relative">
-              <div className="absolute inset-0 rounded-full border-4 border-pink-200"></div>
-              <div className="absolute inset-0 rounded-full border-4 border-pink-500 border-t-transparent animate-spin"></div>
-              <div className="absolute inset-3 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 flex items-center justify-center">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-              </div>
-            </div>
-            <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
-              Saving Your Video
-            </h3>
-            <p className="text-sm text-gray-600">
-              Please wait while we add this post to your campaign...
-            </p>
-          </div>
-        )}
-      </div>
-    );
-  };
+          <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">Saving Your Video</h3>
+          <p className="text-sm text-gray-600">Please wait while we add this post to your campaign...</p>
+        </div>
+      )}
+    </div>
+  );
 
   // ============================================================================
-  // RENDER: Modal Header
+  // RENDER: Header Helpers
   // ============================================================================
 
-  const getHeaderTitle = () => {
+  const getHeaderTitle = (): string => {
     if (submitStatus.type === 'success') return '✓ Success!';
     if (submitStatus.type === 'error' && step === 'preview') return '⚠ Error';
-    
-    switch (step) {
-      case 'input': return 'Add New Video';
-      case 'manual_form': return 'Manual Entry';
-      case 'preview': return 'Review & Save';
-      case 'saving': return 'Saving...';
-      default: return 'Add Video';
-    }
+
+    const titles: Record<ModalStep, string> = {
+      input: 'Add New Video',
+      manual_form: 'Manual Entry',
+      preview: 'Review & Save',
+      saving: 'Saving...',
+    };
+    return titles[step] || 'Add Video';
   };
 
-  const getHeaderSubtitle = () => {
+  const getHeaderSubtitle = (): string => {
     if (submitStatus.type === 'success') return 'Video added to your campaign';
     if (submitStatus.type === 'error' && step === 'preview') return 'Please review the error below';
-    
-    switch (step) {
-      case 'input': return 'Enter a URL from any supported platform';
-      case 'manual_form': return `Enter ${detectedPlatform || 'post'} metrics manually`;
-      case 'preview': return 'Review the fetched data and save';
-      case 'saving': return 'Processing your request...';
-      default: return '';
-    }
+
+    const subtitles: Record<ModalStep, string> = {
+      input: 'Enter a URL from any supported platform',
+      manual_form: `Enter ${detectedPlatform || 'post'} metrics manually`,
+      preview: 'Review the fetched data and save',
+      saving: 'Processing your request...',
+    };
+    return subtitles[step] || '';
   };
 
   // ============================================================================
@@ -1449,7 +1346,7 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
         className="bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-w-[95vw] sm:max-w-xl md:max-w-2xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header - Responsive */}
+        {/* Header */}
         <div className="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-3 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
           <div className="flex items-center space-x-2 sm:space-x-3">
             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 flex items-center justify-center flex-shrink-0">
@@ -1473,25 +1370,17 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
           </button>
         </div>
 
-        {/* Content - Responsive padding */}
+        {/* Content */}
         <div className="max-h-[calc(90vh-100px)] sm:max-h-[calc(85vh-120px)] overflow-y-auto">
-          {/* Saving Step */}
           {step === 'saving' ? (
-            <div className="p-3 sm:p-4">
-              {renderSavingStep()}
-            </div>
+            <div className="p-3 sm:p-4">{renderSavingStep()}</div>
           ) : step === 'manual_form' ? (
-            /* Manual Form Step - VideoMetricsForm handles its own form */
-            <div className="p-3 sm:p-4">
-              {renderManualFormStep()}
-            </div>
+            <div className="p-3 sm:p-4">{renderManualFormStep()}</div>
           ) : (
-            /* Input and Preview Steps - Use parent form */
             <form onSubmit={handleSubmit} className="p-3 sm:p-4">
               {step === 'input' && renderInputStep()}
               {step === 'preview' && renderPreviewStep()}
 
-              {/* Action Buttons - Responsive - Hide when success */}
               {submitStatus.type !== 'success' && (
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:space-x-2 pt-3 sm:pt-4 mt-3 sm:mt-4 border-t border-gray-200">
                   {step === 'preview' && (
@@ -1517,7 +1406,7 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={isLoading}
+                    disabled={isLoading || !isPlatformConfigReady}
                     className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-pink-400 to-rose-400 text-white rounded-full hover:from-pink-500 hover:to-rose-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium text-xs sm:text-sm flex items-center justify-center shadow-lg"
                   >
                     {isLoading ? (
@@ -1532,18 +1421,21 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
                     ) : (
                       <>
                         <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          {step === 'input' ? (
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        ) : (
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        )}
-                      </svg>
-                      <span className="hidden sm:inline">{step === 'input' ? (isManualOnly ? 'Continue' : 'Fetch Data') : 'Save Video'}</span>
-                      <span className="sm:hidden">{step === 'input' ? (isManualOnly ? 'Next' : 'Fetch') : 'Save'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d={step === 'input' ? 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' : 'M5 13l4 4L19 7'}
+                          />
+                        </svg>
+                        <span className="hidden sm:inline">
+                          {step === 'input' ? (isManualOnly ? 'Continue' : 'Fetch Data') : 'Save Video'}
+                        </span>
+                        <span className="sm:hidden">{step === 'input' ? (isManualOnly ? 'Next' : 'Fetch') : 'Save'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               )}
             </form>
           )}
@@ -1554,3 +1446,4 @@ const AddVideoModal: React.FC<AddVideoModalProps> = ({
 };
 
 export default AddVideoModal;
+

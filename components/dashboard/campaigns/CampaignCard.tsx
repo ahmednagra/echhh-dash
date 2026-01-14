@@ -186,7 +186,7 @@ export default function CampaignCard({
 
         {/* Continue Button - only for active campaigns */}
         {!isDeleted && (
-          <button className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded-lg text-xs font-medium hover:from-purple-700 hover:to-pink-700 transition-all duration-200">
+          <button className="px-4 py-1.5 text-xs rounded-full transition-all duration-200 border font-semibold bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 border-gray-200 hover:border-gray-300 hover:shadow-sm transform hover:scale-[1.01]">
             {continueButtonText}
           </button>
         )}

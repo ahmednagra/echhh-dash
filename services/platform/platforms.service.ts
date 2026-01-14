@@ -243,7 +243,7 @@ function loadCacheFromStorage(): PlatformConfigCache | null {
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (!cached) return null;
-    
+
     const data: PlatformConfigCache = JSON.parse(cached);
     const age = Date.now() - data.lastFetchedAt;
     

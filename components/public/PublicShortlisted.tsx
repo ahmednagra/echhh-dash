@@ -6,13 +6,14 @@ import { useSearchParams } from 'next/navigation';
 import { PublicCampaignInfluencersResponse } from '@/types/public-campaign-influencers';
 import { formatNumber } from '@/utils/format';
 import { Status } from '@/types/statuses';
-import { getStatuses } from '@/services/statuses/statuses.service';
+import { getStatuses } from '@/services/statuses/statuses.client';
 import { toast } from 'react-hot-toast';
 import {
   updatePublicShortlistedStatus,
   bulkUpdatePublicShortlistedStatus, // 🆕 ADD THIS
 } from '@/services/public-campaign-influencers';
 import ShortlistedInfluencersSummary from '@/components/dashboard/campaign-funnel/discover/shortlisted-influencers/ShortlistedInfluencersSummary';
+import ShortlistedSummaryV2 from '@/components/dashboard/campaign-funnel/discover/shortlisted-influencers/ShortlistedSummaryV2';
 import ColumnVisibility, {
   ColumnDefinition,
 } from '@/components/ui/table/ColumnVisibility';
@@ -29,6 +30,7 @@ import {
 import ResizeHandle from '@/components/ui/table/ResizeHandle';
 import XCampaignsColumn from '@/components/dashboard/campaign-funnel/discover/shortlisted-influencers/columns/XCampaignsColumn';
 import { PastCampaign } from '@/types/campaign-influencers';
+import ShortlistedGridView from '@/components/dashboard/campaign-funnel/discover/shortlisted-influencers/ShortlistedGridView';
 
 interface PublicShortlistedProps {
   data: PublicCampaignInfluencersResponse;
@@ -72,6 +74,8 @@ const PublicShortlisted: React.FC<PublicShortlistedProps> = ({ data }) => {
   );
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const [showPageSizeDropdown, setShowPageSizeDropdown] = useState(false);
+  // View mode state (table or grid)
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [sortConfig, setSortConfig] = useState<{
     key: string | null;
     direction: 'asc' | 'desc' | null;
@@ -1416,11 +1420,61 @@ const PublicShortlisted: React.FC<PublicShortlistedProps> = ({ data }) => {
           </div>
 
           {/* Summary - Always visible (shows all when none selected, selected when some selected) */}
-          <ShortlistedInfluencersSummary
+          <ShortlistedSummaryV2
             selectedInfluencers={Array.from(selectedInfluencers)}
             influencers={activeInfluencers as any}
             onClearSelection={() => setSelectedInfluencers(new Set())}
           />
+
+          {/* ============ VIEW TOGGLE ============ */}
+          <div className="flex items-center justify-end mb-4">
+            <div className="flex border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all duration-200 ${
+                  viewMode === 'table'
+                    ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                  />
+                </svg>
+                Table
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all duration-200 ${
+                  viewMode === 'grid'
+                    ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                  <rect x="14" y="14" width="7" height="7" rx="1" />
+                </svg>
+                Grid
+              </button>
+            </div>
+          </div>
 
           {/* Bulk Status Update - Show when influencers are selected */}
           {selectedInfluencers.size > 0 && (
@@ -1459,162 +1513,250 @@ const PublicShortlisted: React.FC<PublicShortlistedProps> = ({ data }) => {
             </div>
           )}
 
-          {/* Table */}
-          {/* Table */}
-          <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-            <div className="max-h-[735px] overflow-y-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-xs">
-                <thead className="bg-gray-50 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-4 py-3 text-left w-8">
-                      <input
-                        type="checkbox"
-                        checked={
-                          selectedInfluencers.size ===
-                            paginatedInfluencers.length &&
-                          paginatedInfluencers.length > 0
-                        }
-                        onChange={toggleAllSelection}
-                        className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                      />
-                    </th>
-                    {visibleColumnsData.map((column) => (
-                      <th
-                        key={column.key}
-                        className={`px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 group select-none relative ${
-                          column.key === 'tags' ? '' : column.width
-                        }`}
-                        style={
-                          column.key === 'tags'
-                            ? tagsColumnResize.getColumnStyle()
-                            : undefined
-                        }
-                        onClick={() => {
-                          if (tagsColumnResize.justResized) return;
-                          handleSort(column.key);
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="group-hover:text-purple-700 transition-colors duration-200">
-                            {column.label}
-                          </span>
-                          <div className="transform group-hover:scale-110 transition-transform duration-200">
-                            {getSortIcon(column.key)}
-                          </div>
-                        </div>
-
-                        {/* Resize Handle for Tags Column */}
-                        {/* Resize Handle for Tags Column */}
-                        {column.key === 'tags' && (
-                          <ResizeHandle
-                            onMouseDown={tagsColumnResize.handleResizeStart}
-                            isResizing={tagsColumnResize.isResizing}
-                            title="Drag to resize - show more tags"
-                          />
-                        )}
-                      </th>
-                    ))}
-                    {/* Column Visibility Toggle */}
-                    {/* Column Visibility Toggle - Using shared component */}
-                    <th className="px-4 py-3 text-right relative">
-                      <button
-                        onClick={() =>
-                          setShowColumnDropdown(!showColumnDropdown)
-                        }
-                        className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
-                        title="Toggle columns"
-                      >
-                        <svg
-                          className="w-5 h-5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                          />
-                        </svg>
-                      </button>
-
-                      {/* Use shared ColumnVisibility component */}
-                      <ColumnVisibility
-                        isOpen={showColumnDropdown}
-                        onClose={() => setShowColumnDropdown(false)}
-                        columns={allColumns}
-                        visibleColumns={visibleColumns}
-                        onToggleColumn={toggleColumnVisibility}
-                        data={influencers}
-                        position="top-right"
-                      />
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
-                  {paginatedInfluencers.length === 0 ? (
+          {/* ============ CONDITIONAL VIEW RENDERING ============ */}
+          {viewMode === 'grid' ? (
+            /* ========== GRID VIEW ========== */
+            <ShortlistedGridView
+              members={paginatedInfluencers as any}
+              selectedInfluencers={Array.from(selectedInfluencers)}
+              onSelectionChange={(selected: string[]) =>
+                setSelectedInfluencers(new Set(selected))
+              }
+              visibleColumns={visibleColumns}
+              getAdditionalMetric={(member: any, key: string) => {
+                const metrics = member?.social_account
+                  ?.additional_metrics as any;
+                return metrics?.[key] || null;
+              }}
+              getProfilePicture={(member: any) =>
+                member?.social_account?.profile_pic_url ||
+                '/placeholder-avatar.png'
+              }
+              getPlatformName={getPlatformName}
+              getPlatformIcon={getPlatformIcon}
+              formatLocation={(location: any) => formatLocation(location)}
+              formatEngagementRate={(member: any) => {
+                const metrics = member?.social_account
+                  ?.additional_metrics as any;
+                const rate =
+                  metrics?.engagementRate || metrics?.engagement_rate || 0;
+                return typeof rate === 'number'
+                  ? `${(rate > 1 ? rate : rate * 100).toFixed(2)}%`
+                  : 'N/A';
+              }}
+              getCombinedAverageViews={(member: any) => {
+                const metrics = member?.social_account
+                  ?.additional_metrics as any;
+                return (
+                  metrics?.average_views ||
+                  metrics?.instagram_options?.reel_views ||
+                  0
+                );
+              }}
+              shortlistedStatuses={shortlistedStatuses}
+              onShortlistedStatusChange={handleShortlistedStatusChange}
+              updatingStatus={updatingStatus}
+              statusesLoading={statusesLoading}
+              localInfluencerUpdates={localInfluencerUpdates}
+              searchText={searchTerm}
+              // {/* ========== MISSING REQUIRED PROPS (Public page - pass empty handlers) ========== */}
+              onProfileInsights={() => {}}
+              onRowUpdate={() => {}}
+              onRemovingChange={() => {}}
+              removingInfluencers={[]}
+              onInfluencerRemoved={() => {}}
+              onRefreshProfileData={() => {}}
+              isRefreshingProfile={false}
+              refreshingMemberId={null}
+            />
+          ) : (
+            /* ========== TABLE VIEW (Original) ========== */
+            <div className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+              <div className="max-h-[735px] overflow-y-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                  <thead className="bg-gray-50 sticky top-0 z-10">
                     <tr>
-                      <td
-                        colSpan={visibleColumnsData.length + 2}
-                        className="px-6 py-12 text-center text-gray-500 text-sm"
-                      >
-                        {searchTerm
-                          ? 'No influencers match your search'
-                          : 'No influencers found'}
-                      </td>
+                      <th className="px-4 py-3 text-left w-8">
+                        <input
+                          type="checkbox"
+                          checked={
+                            selectedInfluencers.size ===
+                              paginatedInfluencers.length &&
+                            paginatedInfluencers.length > 0
+                          }
+                          onChange={toggleAllSelection}
+                          className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                        />
+                      </th>
+                      {visibleColumnsData.map((column) => (
+                        <th
+                          key={column.key}
+                          className={`px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 group select-none relative ${
+                            column.key === 'tags' ? '' : column.width
+                          }`}
+                          style={
+                            column.key === 'tags'
+                              ? tagsColumnResize.getColumnStyle()
+                              : undefined
+                          }
+                          onClick={() => {
+                            if (tagsColumnResize.justResized) return;
+                            handleSort(column.key);
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="group-hover:text-purple-700 transition-colors duration-200">
+                              {column.label}
+                            </span>
+                            <div className="transform group-hover:scale-110 transition-transform duration-200">
+                              {getSortIcon(column.key)}
+                            </div>
+                          </div>
+
+                          {/* Resize Handle for Tags Column */}
+                          {/* Resize Handle for Tags Column */}
+                          {column.key === 'tags' && (
+                            <ResizeHandle
+                              onMouseDown={tagsColumnResize.handleResizeStart}
+                              isResizing={tagsColumnResize.isResizing}
+                              title="Drag to resize - show more tags"
+                            />
+                          )}
+                        </th>
+                      ))}
+                      {/* Column Visibility Toggle */}
+                      {/* Column Visibility Toggle - Using shared component */}
+                      <th className="px-4 py-3 text-right relative">
+                        <button
+                          onClick={() =>
+                            setShowColumnDropdown(!showColumnDropdown)
+                          }
+                          className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+                          title="Toggle columns"
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                            />
+                          </svg>
+                        </button>
+
+                        {/* Use shared ColumnVisibility component */}
+                        <ColumnVisibility
+                          isOpen={showColumnDropdown}
+                          onClose={() => setShowColumnDropdown(false)}
+                          columns={allColumns}
+                          visibleColumns={visibleColumns}
+                          onToggleColumn={toggleColumnVisibility}
+                          data={influencers}
+                          position="top-right"
+                        />
+                      </th>
                     </tr>
-                  ) : (
-                    paginatedInfluencers.map((influencer) => (
-                      <tr
-                        key={influencer.id}
-                        className="hover:bg-gradient-to-r hover:from-purple-50/30 hover:to-pink-50/30 transition-all duration-150 border-b border-gray-100"
-                      >
-                        <td className="px-4 py-3 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={selectedInfluencers.has(influencer.id)}
-                            onChange={() => toggleRowSelection(influencer.id)}
-                            className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                          />
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {paginatedInfluencers.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={visibleColumnsData.length + 2}
+                          className="px-6 py-12 text-center text-gray-500 text-sm"
+                        >
+                          {searchTerm
+                            ? 'No influencers match your search'
+                            : 'No influencers found'}
                         </td>
-                        {visibleColumnsData.map((column) => {
-                          const value = getInfluencerValue(
-                            influencer,
-                            column.key,
-                          );
-                          const displayValue = formatValue(value, column.key);
+                      </tr>
+                    ) : (
+                      paginatedInfluencers.map((influencer) => (
+                        <tr
+                          key={influencer.id}
+                          className="hover:bg-gradient-to-r hover:from-purple-50/30 hover:to-pink-50/30 transition-all duration-150 border-b border-gray-100"
+                        >
+                          <td className="px-4 py-3 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={selectedInfluencers.has(influencer.id)}
+                              onChange={() => toggleRowSelection(influencer.id)}
+                              className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            />
+                          </td>
+                          {visibleColumnsData.map((column) => {
+                            const value = getInfluencerValue(
+                              influencer,
+                              column.key,
+                            );
+                            const displayValue = formatValue(value, column.key);
 
-                          // Special rendering for name column with profile picture - CLICKABLE
-                          if (column.key === 'name') {
-                            const accountUrl = getProfileUrl(influencer);
+                            // Special rendering for name column with profile picture - CLICKABLE
+                            if (column.key === 'name') {
+                              const accountUrl = getProfileUrl(influencer);
 
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <div className="flex items-center min-w-0">
-                                  <div className="flex-shrink-0 h-12 w-12 relative">
-                                    <img
-                                      className="rounded-full object-cover h-12 w-12 border-2 border-gray-200 shadow-sm"
-                                      src={
-                                        influencer.social_account
-                                          ?.profile_pic_url ||
-                                        '/placeholder-avatar.png'
-                                      }
-                                      alt={influencer.social_account?.full_name}
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).src =
-                                          '/placeholder-avatar.png';
-                                      }}
-                                    />
-                                  </div>
-                                  <div className="ml-4 min-w-0 flex-1">
-                                    <div className="text-sm font-medium text-gray-900 flex items-center min-w-0">
-                                      <span
-                                        className="truncate cursor-pointer hover:text-purple-600 transition-colors"
-                                        title={
+                              return (
+                                <td key={column.key} className="px-4 py-3">
+                                  <div className="flex items-center min-w-0">
+                                    <div className="flex-shrink-0 h-12 w-12 relative">
+                                      <img
+                                        className="rounded-full object-cover h-12 w-12 border-2 border-gray-200 shadow-sm"
+                                        src={
                                           influencer.social_account
-                                            ?.full_name || ''
+                                            ?.profile_pic_url ||
+                                          '/placeholder-avatar.png'
                                         }
+                                        alt={
+                                          influencer.social_account?.full_name
+                                        }
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src =
+                                            '/placeholder-avatar.png';
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="ml-4 min-w-0 flex-1">
+                                      <div className="text-sm font-medium text-gray-900 flex items-center min-w-0">
+                                        <span
+                                          className="truncate cursor-pointer hover:text-purple-600 transition-colors"
+                                          title={
+                                            influencer.social_account
+                                              ?.full_name || ''
+                                          }
+                                          onClick={() =>
+                                            accountUrl &&
+                                            window.open(
+                                              accountUrl,
+                                              '_blank',
+                                              'noopener,noreferrer',
+                                            )
+                                          }
+                                        >
+                                          {influencer.social_account
+                                            ?.full_name || 'Unknown'}
+                                        </span>
+                                        {influencer.social_account
+                                          ?.is_verified && (
+                                          <span
+                                            className="ml-1 flex-shrink-0 text-blue-500"
+                                            title="Verified"
+                                          >
+                                            <svg
+                                              className="w-3 h-3"
+                                              fill="currentColor"
+                                              viewBox="0 0 24 24"
+                                            >
+                                              <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1.177-7.86l-2.765-2.767L7 12.431l3.823 3.823 7.177-7.177-1.06-1.06-7.117 7.122z" />
+                                            </svg>
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div
+                                        className="text-xs text-gray-500 flex items-center gap-1 mt-1 cursor-pointer hover:text-gray-700 transition-colors"
                                         onClick={() =>
                                           accountUrl &&
                                           window.open(
@@ -1624,619 +1766,595 @@ const PublicShortlisted: React.FC<PublicShortlistedProps> = ({ data }) => {
                                           )
                                         }
                                       >
-                                        {influencer.social_account?.full_name ||
-                                          'Unknown'}
-                                      </span>
-                                      {influencer.social_account
-                                        ?.is_verified && (
-                                        <span
-                                          className="ml-1 flex-shrink-0 text-blue-500"
-                                          title="Verified"
-                                        >
-                                          <svg
-                                            className="w-3 h-3"
-                                            fill="currentColor"
-                                            viewBox="0 0 24 24"
-                                          >
-                                            <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1.177-7.86l-2.765-2.767L7 12.431l3.823 3.823 7.177-7.177-1.06-1.06-7.117 7.122z" />
-                                          </svg>
+                                        <span className="truncate">
+                                          @
+                                          {influencer.social_account
+                                            ?.account_handle || 'unknown'}
                                         </span>
-                                      )}
-                                    </div>
-                                    <div
-                                      className="text-xs text-gray-500 flex items-center gap-1 mt-1 cursor-pointer hover:text-gray-700 transition-colors"
-                                      onClick={() =>
-                                        accountUrl &&
-                                        window.open(
-                                          accountUrl,
-                                          '_blank',
-                                          'noopener,noreferrer',
-                                        )
-                                      }
-                                    >
-                                      <span className="truncate">
-                                        @
-                                        {influencer.social_account
-                                          ?.account_handle || 'unknown'}
-                                      </span>
-                                      {getPlatformIcon(influencer)}
+                                        {getPlatformIcon(influencer)}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for gender
-                          if (column.key === 'gender') {
-                            if (!value || value === 'N/A') {
-                              return (
-                                <td
-                                  key={column.key}
-                                  className="px-4 py-3 text-sm text-gray-700"
-                                >
-                                  N/A
-                                </td>
-                              );
-                            }
-                            const displayGender =
-                              String(value).charAt(0).toUpperCase() +
-                              String(value).slice(1).toLowerCase();
-                            const colorClass =
-                              value?.toLowerCase() === 'female'
-                                ? 'bg-pink-100 text-pink-800'
-                                : value?.toLowerCase() === 'male'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-gray-100 text-gray-800';
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <span
-                                  className={`text-xs px-2 py-1 rounded-full ${colorClass}`}
-                                >
-                                  {displayGender}
-                                </span>
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for location
-                          if (column.key === 'location') {
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
-                                  {displayValue}
-                                </span>
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for audience age groups
-                          if (column.key === 'audience_age_groups') {
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                                  {displayValue}
-                                </span>
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for age distribution
-                          if (column.key === 'age_distribution') {
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full">
-                                  {displayValue}
-                                </span>
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for audience gender distribution
-                          if (column.key === 'audience_gender_distribution') {
-                            if (displayValue === 'N/A') {
-                              return (
-                                <td
-                                  key={column.key}
-                                  className="px-4 py-3 text-sm text-gray-700"
-                                >
-                                  N/A
                                 </td>
                               );
                             }
 
-                            const genderParts = displayValue.split(' | ');
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <div className="flex flex-wrap gap-1">
-                                  {genderParts.map(
-                                    (genderPart: string, index: number) => {
-                                      const isMale =
-                                        genderPart
-                                          .toLowerCase()
-                                          .includes('male') &&
-                                        !genderPart
-                                          .toLowerCase()
-                                          .includes('female');
-                                      const isFemale = genderPart
-                                        .toLowerCase()
-                                        .includes('female');
-                                      const percentageMatch =
-                                        genderPart.match(/(\d+)%/);
-                                      const percentage = percentageMatch
-                                        ? percentageMatch[1] + '%'
-                                        : '';
-
-                                      let displayText = '';
-                                      let colorClass = '';
-
-                                      if (isMale) {
-                                        displayText = `M: ${percentage}`;
-                                        colorClass =
-                                          'bg-blue-100 text-blue-800';
-                                      } else if (isFemale) {
-                                        displayText = `F: ${percentage}`;
-                                        colorClass =
-                                          'bg-pink-100 text-pink-800';
-                                      } else {
-                                        displayText = genderPart;
-                                        colorClass =
-                                          'bg-gray-100 text-gray-800';
-                                      }
-
-                                      return (
-                                        <span
-                                          key={index}
-                                          className={`text-xs px-2 py-1 rounded-full ${colorClass}`}
-                                        >
-                                          {displayText}
-                                        </span>
-                                      );
-                                    },
-                                  )}
-                                </div>
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for audience locations
-                          if (column.key === 'audience_locations') {
-                            if (displayValue === 'N/A') {
-                              return (
-                                <td
-                                  key={column.key}
-                                  className="px-4 py-3 text-sm text-gray-700"
-                                >
-                                  N/A
-                                </td>
-                              );
-                            }
-
-                            const locations = displayValue.split(', ');
-                            const colorClasses = [
-                              'bg-green-100 text-green-800',
-                              'bg-purple-100 text-purple-800',
-                              'bg-orange-100 text-orange-800',
-                            ];
-
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <div className="flex flex-wrap gap-1">
-                                  {locations.map(
-                                    (location: string, index: number) => {
-                                      const colorClass =
-                                        colorClasses[
-                                          index % colorClasses.length
-                                        ] || 'bg-gray-100 text-gray-800';
-                                      return (
-                                        <span
-                                          key={index}
-                                          className={`text-xs px-2 py-1 rounded-full ${colorClass}`}
-                                        >
-                                          {location}
-                                        </span>
-                                      );
-                                    },
-                                  )}
-                                </div>
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for platform account type
-                          if (column.key === 'platform_account_type') {
-                            if (!value || value === 'N/A') {
-                              return (
-                                <td
-                                  key={column.key}
-                                  className="px-4 py-3 text-sm text-gray-700"
-                                >
-                                  N/A
-                                </td>
-                              );
-                            }
-                            const displayType = String(value)
-                              .replace('_', ' ')
-                              .replace(/\b\w/g, (l) => l.toUpperCase());
-                            const colorClass =
-                              value === 'BUSINESS'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-green-100 text-green-800';
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <span
-                                  className={`text-xs px-2 py-1 rounded-full ${colorClass}`}
-                                >
-                                  {displayType}
-                                </span>
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for price column
-                          if (column.key === 'price') {
-                            const priceData = value as any;
-                            const currencySymbols: Record<string, string> = {
-                              USD: '$',
-                              EUR: '€',
-                              GBP: '£',
-                              INR: '₹',
-                              PKR: '₨',
-                              AED: 'د.إ',
-                              CAD: 'C$',
-                              AUD: 'A$',
-                              JPY: '¥',
-                              SAR: '﷼',
-                            };
-
-                            if (!priceData?.priceApproved) {
+                            // Special rendering for gender
+                            if (column.key === 'gender') {
+                              if (!value || value === 'N/A') {
+                                return (
+                                  <td
+                                    key={column.key}
+                                    className="px-4 py-3 text-sm text-gray-700"
+                                  >
+                                    N/A
+                                  </td>
+                                );
+                              }
+                              const displayGender =
+                                String(value).charAt(0).toUpperCase() +
+                                String(value).slice(1).toLowerCase();
+                              const colorClass =
+                                value?.toLowerCase() === 'female'
+                                  ? 'bg-pink-100 text-pink-800'
+                                  : value?.toLowerCase() === 'male'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-gray-100 text-gray-800';
                               return (
                                 <td key={column.key} className="px-4 py-3">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                                    <svg
-                                      className="w-3 h-3"
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      stroke="currentColor"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                      />
-                                    </svg>
-                                    Pending
+                                  <span
+                                    className={`text-xs px-2 py-1 rounded-full ${colorClass}`}
+                                  >
+                                    {displayGender}
                                   </span>
                                 </td>
                               );
                             }
 
-                            const symbol =
-                              currencySymbols[priceData.currency] || '$';
-                            return (
-                              <td
-                                key={column.key}
-                                className="px-4 py-3 text-sm font-medium text-gray-900"
-                              >
-                                {symbol}
-                                {Math.round(
-                                  priceData.totalPrice,
-                                ).toLocaleString()}
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for CPV column
-                          if (column.key === 'cpv') {
-                            if (
-                              value === null ||
-                              typeof value !== 'number' ||
-                              value <= 0
-                            ) {
+                            // Special rendering for location
+                            if (column.key === 'location') {
                               return (
-                                <td
-                                  key={column.key}
-                                  className="px-4 py-3 text-sm text-gray-400"
-                                >
-                                  -
+                                <td key={column.key} className="px-4 py-3">
+                                  <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
+                                    {displayValue}
+                                  </span>
                                 </td>
                               );
                             }
-                            return (
-                              <td
-                                key={column.key}
-                                className="px-4 py-3 text-sm font-medium text-gray-700"
-                              >
-                                {value.toFixed(4)}
-                              </td>
-                            );
-                          }
 
-                          if (column.key === 'tags') {
-                            return (
-                              <td
-                                key={column.key}
-                                className="px-4 py-3"
-                                style={tagsColumnResize.getColumnStyle()}
-                              >
-                                <TagsColumn
-                                  member={influencer as any}
-                                  readOnly={true}
-                                  columnWidth={tagsColumnResize.width}
-                                />
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for social column
-                          if (column.key === 'social') {
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <SocialColumn
-                                  member={influencer as any}
-                                  readOnly={true}
-                                />
-                              </td>
-                            );
-                          }
-
-                          // Special rendering for X-Campaigns column
-                          if (column.key === 'x_campaigns') {
-                            const pastCampaigns: PastCampaign[] =
-                              (influencer as any).past_campaigns || [];
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <XCampaignsColumn
-                                  member={influencer as any}
-                                  pastCampaigns={pastCampaigns}
-                                  readOnly={true}
-                                />
-                              </td>
-                            );
-                          }
-                          // Special rendering for status - Using shared component
-                          if (column.key === 'shortlisted_status') {
-                            return (
-                              <td key={column.key} className="px-4 py-3">
-                                <ShortlistedStatusCell
-                                  influencer={influencer}
-                                  shortlistedStatuses={shortlistedStatuses}
-                                  onStatusChange={handleShortlistedStatusChange}
-                                  isUpdating={updatingStatus.has(influencer.id)}
-                                  statusesLoading={statusesLoading}
-                                  localUpdate={
-                                    localInfluencerUpdates[influencer.id]
-                                  }
-                                />
-                              </td>
-                            );
-                          }
-
-                          // Default rendering for all other columns
-                          return (
-                            <td
-                              key={column.key}
-                              className="px-4 py-3 text-sm text-gray-700"
-                            >
-                              {displayValue}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            {/* Pagination */}
-            {sortedInfluencers.length > 0 && (
-              <div className="bg-gradient-to-r from-gray-50 to-gray-100/50 px-6 py-4 border-t border-gray-200">
-                <div className="flex items-center justify-between">
-                  {/* Page Navigation Buttons */}
-                  <div className="flex items-center">
-                    {totalPages > 1 && (
-                      <nav
-                        className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                        aria-label="Pagination"
-                      >
-                        {/* Previous Button */}
-                        <button
-                          onClick={() =>
-                            setCurrentPage((prev) => Math.max(1, prev - 1))
-                          }
-                          disabled={currentPage === 1}
-                          className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <span className="sr-only">Previous</span>
-                          <svg
-                            className="h-5 w-5"
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </button>
-
-                        {/* Page Number Buttons */}
-                        {(() => {
-                          const pageNumbers: (number | string)[] = [];
-                          const showEllipsisStart = currentPage > 3;
-                          const showEllipsisEnd = currentPage < totalPages - 2;
-
-                          if (totalPages <= 7) {
-                            for (let i = 1; i <= totalPages; i++) {
-                              pageNumbers.push(i);
-                            }
-                          } else {
-                            pageNumbers.push(1);
-                            if (showEllipsisStart) pageNumbers.push('...');
-
-                            const start = Math.max(2, currentPage - 1);
-                            const end = Math.min(
-                              totalPages - 1,
-                              currentPage + 1,
-                            );
-
-                            for (let i = start; i <= end; i++) {
-                              pageNumbers.push(i);
+                            // Special rendering for audience age groups
+                            if (column.key === 'audience_age_groups') {
+                              return (
+                                <td key={column.key} className="px-4 py-3">
+                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                    {displayValue}
+                                  </span>
+                                </td>
+                              );
                             }
 
-                            if (showEllipsisEnd) pageNumbers.push('...');
-                            pageNumbers.push(totalPages);
-                          }
+                            // Special rendering for age distribution
+                            if (column.key === 'age_distribution') {
+                              return (
+                                <td key={column.key} className="px-4 py-3">
+                                  <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full">
+                                    {displayValue}
+                                  </span>
+                                </td>
+                              );
+                            }
 
-                          return pageNumbers.map((pageNum, idx) => (
-                            <div key={idx}>
-                              {pageNum === '...' ? (
-                                <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                                  ...
-                                </span>
-                              ) : (
-                                <button
-                                  onClick={() =>
-                                    setCurrentPage(pageNum as number)
-                                  }
-                                  className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                                    pageNum === currentPage
-                                      ? 'bg-purple-50 text-purple-600 border-purple-300 z-10'
-                                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                  }`}
-                                >
-                                  {pageNum}
-                                </button>
-                              )}
-                            </div>
-                          ));
-                        })()}
+                            // Special rendering for audience gender distribution
+                            if (column.key === 'audience_gender_distribution') {
+                              if (displayValue === 'N/A') {
+                                return (
+                                  <td
+                                    key={column.key}
+                                    className="px-4 py-3 text-sm text-gray-700"
+                                  >
+                                    N/A
+                                  </td>
+                                );
+                              }
 
-                        {/* Next Button */}
-                        <button
-                          onClick={() =>
-                            setCurrentPage((prev) =>
-                              Math.min(totalPages, prev + 1),
-                            )
-                          }
-                          disabled={currentPage === totalPages}
-                          className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <span className="sr-only">Next</span>
-                          <svg
-                            className="h-5 w-5"
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </button>
-                      </nav>
-                    )}
-                  </div>
+                              const genderParts = displayValue.split(' | ');
+                              return (
+                                <td key={column.key} className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    {genderParts.map(
+                                      (genderPart: string, index: number) => {
+                                        const isMale =
+                                          genderPart
+                                            .toLowerCase()
+                                            .includes('male') &&
+                                          !genderPart
+                                            .toLowerCase()
+                                            .includes('female');
+                                        const isFemale = genderPart
+                                          .toLowerCase()
+                                          .includes('female');
+                                        const percentageMatch =
+                                          genderPart.match(/(\d+)%/);
+                                        const percentage = percentageMatch
+                                          ? percentageMatch[1] + '%'
+                                          : '';
 
-                  {/* Results Counter + Page Size Selector */}
-                  <div className="flex items-center">
-                    <p className="text-sm text-gray-700 mr-2">
-                      Showing{' '}
-                      <span className="font-medium">
-                        {(currentPage - 1) * itemsPerPage + 1}
-                      </span>{' '}
-                      to{' '}
-                      <span className="font-medium">
-                        {Math.min(
-                          currentPage * itemsPerPage,
-                          sortedInfluencers.length,
-                        )}
-                      </span>{' '}
-                      of{' '}
-                      <span className="font-medium">
-                        {sortedInfluencers.length}
-                      </span>{' '}
-                      entries
-                    </p>
+                                        let displayText = '';
+                                        let colorClass = '';
 
-                    {/* Page Size Dropdown */}
-                    <div className="relative">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowPageSizeDropdown(!showPageSizeDropdown);
-                        }}
-                        className="bg-white border border-gray-300 rounded-md shadow-sm px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none flex items-center"
-                      >
-                        Show{' '}
-                        {itemsPerPage >= sortedInfluencers.length
-                          ? 'All'
-                          : itemsPerPage}
-                        <svg
-                          className={`-mr-1 ml-1 h-5 w-5 transform transition-transform ${showPageSizeDropdown ? 'rotate-180' : ''}`}
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </button>
+                                        if (isMale) {
+                                          displayText = `M: ${percentage}`;
+                                          colorClass =
+                                            'bg-blue-100 text-blue-800';
+                                        } else if (isFemale) {
+                                          displayText = `F: ${percentage}`;
+                                          colorClass =
+                                            'bg-pink-100 text-pink-800';
+                                        } else {
+                                          displayText = genderPart;
+                                          colorClass =
+                                            'bg-gray-100 text-gray-800';
+                                        }
 
-                      {showPageSizeDropdown && (
-                        <div className="absolute right-0 bottom-full mb-1 w-32 bg-white border border-gray-300 rounded-md shadow-lg z-50">
-                          <div className="py-1">
-                            {[
-                              10,
-                              25,
-                              50,
-                              100,
-                              { value: 999999, label: 'Show All' },
-                            ].map((option, index) => {
-                              const isObject = typeof option === 'object';
-                              const size = isObject ? option.value : option;
-                              const label = isObject
-                                ? option.label
-                                : `Show ${option}`;
-                              const isActive = itemsPerPage === size;
+                                        return (
+                                          <span
+                                            key={index}
+                                            className={`text-xs px-2 py-1 rounded-full ${colorClass}`}
+                                          >
+                                            {displayText}
+                                          </span>
+                                        );
+                                      },
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            }
+
+                            // Special rendering for audience locations
+                            if (column.key === 'audience_locations') {
+                              if (displayValue === 'N/A') {
+                                return (
+                                  <td
+                                    key={column.key}
+                                    className="px-4 py-3 text-sm text-gray-700"
+                                  >
+                                    N/A
+                                  </td>
+                                );
+                              }
+
+                              const locations = displayValue.split(', ');
+                              const colorClasses = [
+                                'bg-green-100 text-green-800',
+                                'bg-purple-100 text-purple-800',
+                                'bg-orange-100 text-orange-800',
+                              ];
 
                               return (
-                                <button
-                                  key={index}
-                                  onClick={() => {
-                                    setItemsPerPage(size);
-                                    setCurrentPage(1);
-                                    setShowPageSizeDropdown(false);
-                                  }}
-                                  className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                                    isActive
-                                      ? 'bg-purple-50 text-purple-600 font-medium'
-                                      : 'text-gray-700'
-                                  }`}
-                                >
-                                  {label}
-                                </button>
+                                <td key={column.key} className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    {locations.map(
+                                      (location: string, index: number) => {
+                                        const colorClass =
+                                          colorClasses[
+                                            index % colorClasses.length
+                                          ] || 'bg-gray-100 text-gray-800';
+                                        return (
+                                          <span
+                                            key={index}
+                                            className={`text-xs px-2 py-1 rounded-full ${colorClass}`}
+                                          >
+                                            {location}
+                                          </span>
+                                        );
+                                      },
+                                    )}
+                                  </div>
+                                </td>
                               );
-                            })}
-                          </div>
-                        </div>
+                            }
+
+                            // Special rendering for platform account type
+                            if (column.key === 'platform_account_type') {
+                              if (!value || value === 'N/A') {
+                                return (
+                                  <td
+                                    key={column.key}
+                                    className="px-4 py-3 text-sm text-gray-700"
+                                  >
+                                    N/A
+                                  </td>
+                                );
+                              }
+                              const displayType = String(value)
+                                .replace('_', ' ')
+                                .replace(/\b\w/g, (l) => l.toUpperCase());
+                              const colorClass =
+                                value === 'BUSINESS'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-green-100 text-green-800';
+                              return (
+                                <td key={column.key} className="px-4 py-3">
+                                  <span
+                                    className={`text-xs px-2 py-1 rounded-full ${colorClass}`}
+                                  >
+                                    {displayType}
+                                  </span>
+                                </td>
+                              );
+                            }
+
+                            // Special rendering for price column
+                            if (column.key === 'price') {
+                              const priceData = value as any;
+                              const currencySymbols: Record<string, string> = {
+                                USD: '$',
+                                EUR: '€',
+                                GBP: '£',
+                                INR: '₹',
+                                PKR: '₨',
+                                AED: 'د.إ',
+                                CAD: 'C$',
+                                AUD: 'A$',
+                                JPY: '¥',
+                                SAR: '﷼',
+                              };
+
+                              if (!priceData?.priceApproved) {
+                                return (
+                                  <td key={column.key} className="px-4 py-3">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                      <svg
+                                        className="w-3 h-3"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                        />
+                                      </svg>
+                                      Pending
+                                    </span>
+                                  </td>
+                                );
+                              }
+
+                              const symbol =
+                                currencySymbols[priceData.currency] || '$';
+                              return (
+                                <td
+                                  key={column.key}
+                                  className="px-4 py-3 text-sm font-medium text-gray-900"
+                                >
+                                  {symbol}
+                                  {Math.round(
+                                    priceData.totalPrice,
+                                  ).toLocaleString()}
+                                </td>
+                              );
+                            }
+
+                            // Special rendering for CPV column
+                            if (column.key === 'cpv') {
+                              if (
+                                value === null ||
+                                typeof value !== 'number' ||
+                                value <= 0
+                              ) {
+                                return (
+                                  <td
+                                    key={column.key}
+                                    className="px-4 py-3 text-sm text-gray-400"
+                                  >
+                                    -
+                                  </td>
+                                );
+                              }
+                              return (
+                                <td
+                                  key={column.key}
+                                  className="px-4 py-3 text-sm font-medium text-gray-700"
+                                >
+                                  {value.toFixed(4)}
+                                </td>
+                              );
+                            }
+
+                            if (column.key === 'tags') {
+                              return (
+                                <td
+                                  key={column.key}
+                                  className="px-4 py-3"
+                                  style={tagsColumnResize.getColumnStyle()}
+                                >
+                                  <TagsColumn
+                                    member={influencer as any}
+                                    readOnly={true}
+                                    columnWidth={tagsColumnResize.width}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            // Special rendering for social column
+                            if (column.key === 'social') {
+                              return (
+                                <td key={column.key} className="px-4 py-3">
+                                  <SocialColumn
+                                    member={influencer as any}
+                                    readOnly={true}
+                                  />
+                                </td>
+                              );
+                            }
+
+                            // Special rendering for X-Campaigns column
+                            if (column.key === 'x_campaigns') {
+                              const pastCampaigns: PastCampaign[] =
+                                (influencer as any).past_campaigns || [];
+                              return (
+                                <td key={column.key} className="px-4 py-3">
+                                  <XCampaignsColumn
+                                    member={influencer as any}
+                                    pastCampaigns={pastCampaigns}
+                                    readOnly={true}
+                                  />
+                                </td>
+                              );
+                            }
+                            // Special rendering for status - Using shared component
+                            if (column.key === 'shortlisted_status') {
+                              return (
+                                <td key={column.key} className="px-4 py-3">
+                                  <ShortlistedStatusCell
+                                    influencer={influencer}
+                                    shortlistedStatuses={shortlistedStatuses}
+                                    onStatusChange={
+                                      handleShortlistedStatusChange
+                                    }
+                                    isUpdating={updatingStatus.has(
+                                      influencer.id,
+                                    )}
+                                    statusesLoading={statusesLoading}
+                                    localUpdate={
+                                      localInfluencerUpdates[influencer.id]
+                                    }
+                                  />
+                                </td>
+                              );
+                            }
+
+                            // Default rendering for all other columns
+                            return (
+                              <td
+                                key={column.key}
+                                className="px-4 py-3 text-sm text-gray-700"
+                              >
+                                {displayValue}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {/* Pagination */}
+              {sortedInfluencers.length > 0 && (
+                <div className="bg-gradient-to-r from-gray-50 to-gray-100/50 px-6 py-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    {/* Page Navigation Buttons */}
+                    <div className="flex items-center">
+                      {totalPages > 1 && (
+                        <nav
+                          className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
+                          aria-label="Pagination"
+                        >
+                          {/* Previous Button */}
+                          <button
+                            onClick={() =>
+                              setCurrentPage((prev) => Math.max(1, prev - 1))
+                            }
+                            disabled={currentPage === 1}
+                            className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <span className="sr-only">Previous</span>
+                            <svg
+                              className="h-5 w-5"
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </button>
+
+                          {/* Page Number Buttons */}
+                          {(() => {
+                            const pageNumbers: (number | string)[] = [];
+                            const showEllipsisStart = currentPage > 3;
+                            const showEllipsisEnd =
+                              currentPage < totalPages - 2;
+
+                            if (totalPages <= 7) {
+                              for (let i = 1; i <= totalPages; i++) {
+                                pageNumbers.push(i);
+                              }
+                            } else {
+                              pageNumbers.push(1);
+                              if (showEllipsisStart) pageNumbers.push('...');
+
+                              const start = Math.max(2, currentPage - 1);
+                              const end = Math.min(
+                                totalPages - 1,
+                                currentPage + 1,
+                              );
+
+                              for (let i = start; i <= end; i++) {
+                                pageNumbers.push(i);
+                              }
+
+                              if (showEllipsisEnd) pageNumbers.push('...');
+                              pageNumbers.push(totalPages);
+                            }
+
+                            return pageNumbers.map((pageNum, idx) => (
+                              <div key={idx}>
+                                {pageNum === '...' ? (
+                                  <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                    ...
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      setCurrentPage(pageNum as number)
+                                    }
+                                    className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                                      pageNum === currentPage
+                                        ? 'bg-purple-50 text-purple-600 border-purple-300 z-10'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    {pageNum}
+                                  </button>
+                                )}
+                              </div>
+                            ));
+                          })()}
+
+                          {/* Next Button */}
+                          <button
+                            onClick={() =>
+                              setCurrentPage((prev) =>
+                                Math.min(totalPages, prev + 1),
+                              )
+                            }
+                            disabled={currentPage === totalPages}
+                            className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <span className="sr-only">Next</span>
+                            <svg
+                              className="h-5 w-5"
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </button>
+                        </nav>
                       )}
+                    </div>
+
+                    {/* Results Counter + Page Size Selector */}
+                    <div className="flex items-center">
+                      <p className="text-sm text-gray-700 mr-2">
+                        Showing{' '}
+                        <span className="font-medium">
+                          {(currentPage - 1) * itemsPerPage + 1}
+                        </span>{' '}
+                        to{' '}
+                        <span className="font-medium">
+                          {Math.min(
+                            currentPage * itemsPerPage,
+                            sortedInfluencers.length,
+                          )}
+                        </span>{' '}
+                        of{' '}
+                        <span className="font-medium">
+                          {sortedInfluencers.length}
+                        </span>{' '}
+                        entries
+                      </p>
+
+                      {/* Page Size Dropdown */}
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowPageSizeDropdown(!showPageSizeDropdown);
+                          }}
+                          className="bg-white border border-gray-300 rounded-md shadow-sm px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none flex items-center"
+                        >
+                          Show{' '}
+                          {itemsPerPage >= sortedInfluencers.length
+                            ? 'All'
+                            : itemsPerPage}
+                          <svg
+                            className={`-mr-1 ml-1 h-5 w-5 transform transition-transform ${showPageSizeDropdown ? 'rotate-180' : ''}`}
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+
+                        {showPageSizeDropdown && (
+                          <div className="absolute right-0 bottom-full mb-1 w-32 bg-white border border-gray-300 rounded-md shadow-lg z-50">
+                            <div className="py-1">
+                              {[
+                                10,
+                                25,
+                                50,
+                                100,
+                                { value: 999999, label: 'Show All' },
+                              ].map((option, index) => {
+                                const isObject = typeof option === 'object';
+                                const size = isObject ? option.value : option;
+                                const label = isObject
+                                  ? option.label
+                                  : `Show ${option}`;
+                                const isActive = itemsPerPage === size;
+
+                                return (
+                                  <button
+                                    key={index}
+                                    onClick={() => {
+                                      setItemsPerPage(size);
+                                      setCurrentPage(1);
+                                      setShowPageSizeDropdown(false);
+                                    }}
+                                    className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                                      isActive
+                                        ? 'bg-purple-50 text-purple-600 font-medium'
+                                        : 'text-gray-700'
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </>

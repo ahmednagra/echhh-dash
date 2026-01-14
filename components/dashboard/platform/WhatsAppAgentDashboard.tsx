@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { getStatusList } from '@/services/statuses/statuses.service';
+import { getStatuses } from '@/services/statuses/statuses.client';
 import { AssignmentInfluencer } from '@/types/assignment-influencers';
 import { Status } from '@/types/statuses';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -44,7 +44,7 @@ export default function WhatsAppAgentDashboard() {
     try {
       setStatusesLoading(true);
       setStatusesError(null);
-      const statuses = await getStatusList('campaign_influencer');
+      const statuses = await getStatuses('campaign_influencer', 'status_id');
       setAvailableStatuses(statuses);
     } catch (error) {
       console.error('Error fetching statuses:', error);

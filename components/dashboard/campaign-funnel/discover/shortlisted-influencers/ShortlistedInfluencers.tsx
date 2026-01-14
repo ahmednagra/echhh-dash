@@ -26,6 +26,7 @@ import ExportButton from './ExportButton';
 import ImportCsvButton from './ImportCsvButton';
 import AddUserButton from './AddUserButton';
 import ShortlistedInfluencersSummary from './ShortlistedInfluencersSummary';
+import ShortlistedSummaryV2 from './ShortlistedSummaryV2';
 import AddedThroughFilter from './AddedThroughFilter';
 import {
   AddedThroughFilterOption,
@@ -39,7 +40,7 @@ import {
   updateInfluencerContact,
 } from '@/services/influencer-contacts/influencer-contacts.service';
 import { createPublicSession } from '@/services/public-sessions/public-sessions.client';
-import { Copy, Check, ChevronDown } from 'lucide-react';
+import { Copy, Check, ChevronDown, Download, Upload, UserPlus, Share2, FileText, Trash2 } from 'lucide-react';
 
 // ✅ ADD CONTEXT IMPORT
 import { useCampaigns } from '@/context/CampaignContext';
@@ -1598,6 +1599,117 @@ const ShortlistedInfluencers: React.FC<ShortlistedInfluencersProps> = ({
             </>
           )}
 
+{/* ============ ICON-ONLY ACTION TOOLBAR ============ */}
+          <div className="relative z-50 flex items-center gap-1 p-1.5 bg-white/80 backdrop-blur-sm rounded-xl border border-gray-200 shadow-sm">
+            {/* Import Button */}
+            <div className="relative group">
+              <ImportCsvButton
+                onImportInfluencer={handleImportInfluencer}
+                onImportComplete={(successCount: number) => {
+                  if (onInfluencerAdded) {
+                    onInfluencerAdded();
+                  }
+                  toast.success(
+                    `Successfully imported ${successCount} influencer(s)${successCount > 0 ? ' with contact details' : ''}`,
+                  );
+                }}
+                disabled={!selectedPlatform}
+                iconOnly={true}
+              />
+            </div>
+
+            {/* Export Button */}
+            <div className="relative group">
+              <ExportButton
+                members={filteredMembers}
+                campaignName={campaignData?.name}
+                selectedMembers={
+                  selectedInfluencers.length > 0
+                    ? filteredMembers.filter((member) =>
+                        selectedInfluencers.includes(member.id ?? ''),
+                      )
+                    : undefined
+                }
+                visibleColumns={visibleColumns}
+                iconOnly={true}
+              />
+            </div>
+
+            {/* Add User Button */}
+            <div className="relative group">
+              <AddUserButton
+                campaignData={campaignData}
+                selectedPlatform={selectedPlatform}
+                onInfluencerAdded={onInfluencerAdded}
+                iconOnly={true}
+              />
+            </div>
+
+            {/* Share Button */}
+            <div className="relative group">
+              <button
+                onClick={handleShareUrl}
+                disabled={isCreatingSession}
+                className={`p-2.5 rounded-xl border transition-all duration-200 ${
+                  urlCopied
+                    ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100'
+                    : isCreatingSession
+                      ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed opacity-50'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-purple-50 hover:text-purple-600 hover:border-purple-300 hover:shadow-md hover:shadow-purple-500/10'
+                }`}
+                title={
+                  selectedInfluencers.length > 0
+                    ? `Share ${selectedInfluencers.length} selected`
+                    : 'Share All'
+                }
+              >
+                {isCreatingSession ? (
+                  <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full animate-spin" />
+                ) : urlCopied ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
+              </button>
+              {/* Tooltip */}
+              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 z-[9999] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="px-2.5 py-1 text-xs font-medium bg-gray-900 text-white rounded-lg whitespace-nowrap shadow-lg">
+                  {urlCopied ? 'Copied!' : 'Share'}
+                </div>
+                <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+              </div>
+            </div>
+
+            {/* Templates Button */}
+            {buttonConfig.showTemplateButton && (
+              <div className="relative group">
+                <button
+                  onClick={handleOpenTemplateManager}
+                  disabled={isSavingTemplate}
+                  className={`p-2.5 rounded-xl border transition-all duration-200 ${
+                    isSavingTemplate
+                      ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed opacity-50'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-purple-50 hover:text-purple-600 hover:border-purple-300 hover:shadow-md hover:shadow-purple-500/10'
+                  }`}
+                  title="Templates"
+                >
+                  {isSavingTemplate ? (
+                    <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full animate-spin" />
+                  ) : (
+                    <FileText className="w-4 h-4" />
+                  )}
+                </button>
+                {/* Tooltip */}
+                <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 z-[9999] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="px-2.5 py-1 text-xs font-medium bg-gray-900 text-white rounded-lg whitespace-nowrap shadow-lg">
+                    Templates
+                  </div>
+                  <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+                </div>
+              </div>
+            )}
+          </div>
+
           <AddedThroughFilter
             currentFilter={addedThroughFilter}
             onFilterChange={handleAddedThroughFilterChange}
@@ -1611,141 +1723,18 @@ const ShortlistedInfluencers: React.FC<ShortlistedInfluencersProps> = ({
             filterCounts={platformFilterCounts}
           />
 
-          <ImportCsvButton
-            onImportInfluencer={handleImportInfluencer}
-            onImportComplete={(successCount: number) => {
-              if (onInfluencerAdded) {
-                onInfluencerAdded();
-              }
-              toast.success(
-                `Successfully imported ${successCount} influencer(s)${successCount > 0 ? ' with contact details' : ''}`,
-              );
-            }}
-            disabled={!selectedPlatform}
-          />
-
-          <AddUserButton
-            campaignData={campaignData}
-            selectedPlatform={selectedPlatform}
-            onInfluencerAdded={onInfluencerAdded}
-          />
-
-          <ExportButton
-            members={filteredMembers}
-            campaignName={campaignData?.name}
-            selectedMembers={
-              selectedInfluencers.length > 0
-                ? filteredMembers.filter((member) =>
-                    selectedInfluencers.includes(member.id ?? ''),
-                  )
-                : undefined
-            }
-            visibleColumns={visibleColumns}
-          />
-
-          <button
-            onClick={handleShareUrl}
-            disabled={isCreatingSession}
-            className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-md border transition-all duration-200 ${
-              urlCopied
-                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:border-green-300 hover:shadow-lg hover:shadow-green-500/20'
-                : isCreatingSession
-                  ? 'bg-gray-50 text-gray-500 border-gray-200 opacity-50 cursor-not-allowed'
-                  : 'bg-gray-50 border-blue-200 text-gray-700 hover:bg-gray-60 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20'
-            }`}
-            title={
-              selectedInfluencers.length > 0
-                ? `Share ${selectedInfluencers.length} selected influencer${selectedInfluencers.length !== 1 ? 's' : ''} with ${visibleColumns?.length || 'default'} visible columns`
-                : `Share all influencers with ${visibleColumns?.length || 'default'} visible columns`
-            }
-          >
-            {isCreatingSession ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span className="hidden sm:inline">Creating...</span>
-              </>
-            ) : urlCopied ? (
-              <>
-                <svg
-                  className="w-4 h-4 text-green-500"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                <span className="hidden sm:inline">URL Copied!</span>
-              </>
-            ) : (
-              <>
-                <svg
-                  className="w-4 h-4 text-gray-500"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"
-                  />
-                </svg>
-                <span className="hidden sm:inline">Share</span>
-              </>
-            )}
-          </button>
-
-          {buttonConfig.showTemplateButton && (
-            <button
-              onClick={handleOpenTemplateManager}
-              disabled={isSavingTemplate}
-              className="flex items-center px-3 py-2 bg-gray-50 text-gray-700 rounded-md border border-purple-200 text-sm font-medium hover:bg-gray-60 hover:border-purple-500 hover:shadow-md hover:shadow-purple-500/20 disabled:opacity-50 transition-all duration-200"
-              title="Manage Templates"
-            >
-              {isSavingTemplate ? (
-                <div className="flex items-center">
-                  <div className="animate-spin w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full mr-1" />
-                  <span className="hidden sm:inline">Updating...</span>
-                </div>
-              ) : (
-                <div className="flex items-center">
-                  <svg
-                    className="w-4 h-4 mr-1"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                  <span className="hidden sm:inline">Templates</span>
-                </div>
-              )}
-            </button>
-          )}
-
           <button
             onClick={() => handleStartOutreach()}
             disabled={buttonConfig.disabled}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 disabled:opacity-50 border shadow-md flex-shrink-0 ${
+            className={`px-5 py-2 text-sm rounded-full transition-all duration-200 border flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
               buttonConfig.variant === 'success'
-                ? 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg hover:shadow-green-500/20 border-green-400'
-                : 'bg-purple-600 text-white hover:bg-purple-700 hover:shadow-lg hover:shadow-purple-500/20 border-purple-400'
+                ? 'font-bold bg-[#DDE9DE] text-[#4A7A4F] border-[#94BF99]'
+                : 'font-semibold bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 border-gray-200 hover:border-gray-300 hover:shadow-sm transform hover:scale-[1.01]'
             }`}
           >
             {isProcessingOutreach ? (
               <div className="flex items-center">
-                <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+                <div className="animate-spin w-4 h-4 border-2 border-[#4A7A4F] border-t-transparent rounded-full mr-2" />
                 <span className="hidden sm:inline">Processing...</span>
               </div>
             ) : (
@@ -1759,7 +1748,7 @@ const ShortlistedInfluencers: React.FC<ShortlistedInfluencersProps> = ({
         <div
           className={`${isAnalyticsVisible ? 'w-8/12' : 'w-full'} transition-all duration-300`}
         >
-          <ShortlistedInfluencersSummary
+          <ShortlistedSummaryV2
             selectedInfluencers={selectedInfluencers}
             influencers={filteredMembers}
             onClearSelection={handleClearSelection}

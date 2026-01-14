@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'react-feather';
 import { AssignmentInfluencer } from '@/types/assignment-influencers';
@@ -19,10 +19,10 @@ interface StatusDropdownProps {
 
 export const ContactStatusBadge = ({ status }: { status: string }) => {
   const getStatusConfig = (status: string) => {
-    const normalizedStatus = status.toLowerCase().replace('_', '');
+    const normalizedStatus = status.toLowerCase().replace(/_/g, '');
 
     switch (normalizedStatus) {
-      case 'assigned':
+      case 'discovered':
         return {
           bg: 'bg-blue-50',
           text: 'text-blue-700',
@@ -94,6 +94,12 @@ export const ContactStatusBadge = ({ status }: { status: string }) => {
           text: 'text-rose-700',
           border: 'border-rose-200',
         };
+      case 'contactonnumber':
+        return {
+          bg: 'bg-violet-50',
+          text: 'text-violet-700',
+          border: 'border-violet-200',
+        };
       default:
         return {
           bg: 'bg-gray-50',
@@ -130,6 +136,30 @@ export default function StatusDropdown({
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Get the current campaign_influencer status_id (this is what we match against availableStatuses)
+  const currentStatusId = useMemo(() => {
+    // Priority: campaign_influencer.status_id (since availableStatuses are campaign_influencer statuses)
+    return influencer.campaign_influencer?.status_id || null;
+  }, [influencer.campaign_influencer?.status_id]);
+
+  // Find the current status object from availableStatuses
+  const currentStatus = useMemo(() => {
+    if (!currentStatusId) return null;
+    return availableStatuses.find((s) => s.id === currentStatusId) || null;
+  }, [currentStatusId, availableStatuses]);
+
+  // Get the display name for the badge
+  const currentStatusName = useMemo(() => {
+    // First try to get from matched availableStatuses (most accurate)
+    if (currentStatus?.name) return currentStatus.name;
+    // Fallback to campaign_influencer.status object if available
+    if (influencer.campaign_influencer?.status?.name) {
+      return influencer.campaign_influencer.status.name;
+    }
+    // Last fallback to assigned_influencer status or default
+    return influencer.status?.name || 'discovered';
+  }, [currentStatus, influencer.campaign_influencer?.status, influencer.status]);
 
   // Handle client-side mounting for portal
   useEffect(() => {
@@ -193,13 +223,16 @@ export default function StatusDropdown({
     }
   }, [isOpen, availableStatuses.length]);
 
-// Close dropdown on scroll (but allow scrolling inside dropdown)
+  // Close dropdown on scroll (but allow scrolling inside dropdown)
   useEffect(() => {
     if (!isOpen) return;
 
     const handleScroll = (event: Event) => {
       // Don't close if scrolling inside the dropdown
-      if (dropdownRef.current && dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        dropdownRef.current.contains(event.target as Node)
+      ) {
         return;
       }
       setIsOpen(false);
@@ -286,8 +319,12 @@ export default function StatusDropdown({
       if (foundStatus && onUpdate) {
         const updatedMember: AssignmentInfluencer = {
           ...influencer,
+          // Keep assigned_influencer status as-is (or update if needed)
+          status: influencer.status,
           campaign_influencer: {
             ...influencer.campaign_influencer,
+            // Update campaign_influencer status_id
+            status_id: statusId,
             status: {
               id: foundStatus.id,
               name: foundStatus.name,
@@ -309,6 +346,11 @@ export default function StatusDropdown({
     }
   };
 
+  // Check if a status option is the currently selected one
+  const isCurrentStatus = (statusId: string) => {
+    return statusId === currentStatusId;
+  };
+
   // Dropdown content to be portaled
   const dropdownContent =
     isOpen && mounted ? (
@@ -324,13 +366,12 @@ export default function StatusDropdown({
               onClick={() => handleStatusChange(status.id)}
               disabled={isUpdating}
               className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center ${
-                status.id === influencer.campaign_influencer.status?.id
+                isCurrentStatus(status.id)
                   ? 'bg-teal-50 text-teal-700'
                   : 'text-gray-700'
               }`}
             >
-              {isUpdating &&
-              status.id === influencer.campaign_influencer.status?.id ? (
+              {isUpdating && isCurrentStatus(status.id) ? (
                 <div className="flex items-center">
                   <InlineSpinner size="sm" />
                   <span className="ml-2">Updating...</span>
@@ -350,9 +391,7 @@ export default function StatusDropdown({
   return (
     <>
       <div className="inline-flex items-center space-x-1">
-        <ContactStatusBadge
-          status={influencer.campaign_influencer.status?.name || 'discovered'}
-        />
+        <ContactStatusBadge status={currentStatusName} />
         <button
           ref={buttonRef}
           onClick={() => setIsOpen(!isOpen)}

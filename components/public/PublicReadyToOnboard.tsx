@@ -15,7 +15,7 @@ import PublicCounterBudgetPopup from '@/components/public/PublicCounterBudgetPop
 import PublicCommentThreadPopup from '@/components/public/PublicCommentThreadPopup';
 import SelectedInfluencersSummary from '@/components/dashboard/campaign-funnel/outreach/selected-manually/SelectedInfluencersSummary';
 import { Status } from '@/types/statuses';
-import { getStatuses } from '@/services/statuses/statuses.service';
+import { getStatuses } from '@/services/statuses/statuses.client';
 import { updatePublicClientReviewStatus } from '@/services/public-campaign-influencers';
 import { toast } from 'react-hot-toast';
 

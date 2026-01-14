@@ -71,10 +71,11 @@ const AddedThroughFilter: React.FC<AddedThroughFilterProps> = ({
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`
-          inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium
-          bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500
-          transition-colors duration-200 relative
-          ${isFilterActive ? 'border-purple-300 bg-purple-50' : ''}
+          inline-flex items-center px-4 py-2 text-sm rounded-full transition-all duration-200 border relative
+          ${isFilterActive 
+            ? 'font-bold bg-[#E8DFF5] text-[#6B4C9A] border-[#A590D1]' 
+            : 'font-semibold bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 border-gray-200 hover:border-gray-300 hover:shadow-sm transform hover:scale-[1.01]'
+          }
         `}
       >
         {/* Icon */}

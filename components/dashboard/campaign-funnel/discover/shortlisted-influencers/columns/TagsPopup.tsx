@@ -19,12 +19,16 @@ import {
   Loader2,
   Square,
   CheckSquare,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { Tag as TagType, InfluencerTag } from '@/types/tags';
 import {
   getAllTags,
   addTagToInfluencerById,
   addTagToInfluencerByName,
+  updateTag,
+  deleteTag,
 } from '@/services/tags/tags.client';
 import { toast } from 'react-hot-toast';
 
@@ -72,10 +76,16 @@ const TagsPopup: React.FC<TagsPopupProps> = ({
   const [existingTagIds, setExistingTagIds] = useState<Set<string>>(new Set());
   const [mounted, setMounted] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  // 🆕 NEW: Edit/Delete states
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
+  const [editingTagValue, setEditingTagValue] = useState<string>('');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const itemRefs = useRef<(HTMLButtonElement | HTMLDivElement | null)[]>([]);
 
   // Mount check for portal
   useEffect(() => {
@@ -91,12 +101,23 @@ const TagsPopup: React.FC<TagsPopupProps> = ({
       setSelectedTagIds(new Set());
       setSearchText('');
       setFocusedIndex(-1);
+      // Reset edit state
+      setEditingTagId(null);
+      setEditingTagValue('');
 
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 100);
     }
   }, [isOpen, existingTags]);
+
+  // Focus edit input when editing starts
+  useEffect(() => {
+    if (editingTagId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingTagId]);
 
   // Fetch all tags when popup opens
   useEffect(() => {
@@ -260,9 +281,125 @@ const TagsPopup: React.FC<TagsPopupProps> = ({
     }
   };
 
+  // =============================================================================
+  // 🆕 NEW: Edit Tag Handlers
+  // =============================================================================
+
+  const handleStartEdit = (tag: TagType, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingTagId(tag.id);
+    setEditingTagValue(tag.tag);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTagId(null);
+    setEditingTagValue('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTagId || !editingTagValue.trim()) {
+      toast.error('Tag name cannot be empty');
+      return;
+    }
+
+    // Check if name changed
+    const originalTag = allTags.find((t) => t.id === editingTagId);
+    if (originalTag && originalTag.tag === editingTagValue.trim()) {
+      handleCancelEdit();
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+      const response = await updateTag(editingTagId, editingTagValue.trim());
+
+      // Update in allTags
+      setAllTags((prev) =>
+        prev.map((t) =>
+          t.id === editingTagId ? { ...t, tag: response.tag } : t,
+        ),
+      );
+
+      // If this tag is assigned to current influencer, update existingTags
+      if (existingTagIds.has(editingTagId)) {
+        const updatedExistingTags = existingTags.map((t) =>
+          t.id === editingTagId ? { ...t, tag: response.tag } : t,
+        );
+        onTagsUpdated(updatedExistingTags);
+      }
+
+      toast.success('Tag updated successfully');
+      handleCancelEdit();
+    } catch (error) {
+      console.error('Error updating tag:', error);
+      toast.error('Failed to update tag');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // =============================================================================
+  // 🆕 NEW: Delete Tag Handler
+  // =============================================================================
+
+  const handleDeleteTag = async (tag: TagType, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the tag "${tag.tag}"?\n\nThis will remove it from ALL influencers across the platform.`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingTagId(tag.id);
+      await deleteTag(tag.id);
+
+      // Remove from allTags
+      setAllTags((prev) => prev.filter((t) => t.id !== tag.id));
+
+      // If this tag was assigned to current influencer, update existingTags
+      if (existingTagIds.has(tag.id)) {
+        const updatedExistingTags = existingTags.filter((t) => t.id !== tag.id);
+        onTagsUpdated(updatedExistingTags);
+        setExistingTagIds((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(tag.id);
+          return newSet;
+        });
+      }
+
+      // Remove from selected if it was selected
+      setSelectedTagIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(tag.id);
+        return newSet;
+      });
+
+      toast.success(`Tag "${tag.tag}" deleted successfully`);
+    } catch (error) {
+      console.error('Error deleting tag:', error);
+      toast.error('Failed to delete tag');
+    } finally {
+      setDeletingTagId(null);
+    }
+  };
+
   // Keyboard navigation handler
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // If editing, handle edit-specific keys
+      if (editingTagId) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          handleCancelEdit();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          handleSaveEdit();
+        }
+        return;
+      }
+
       const availableItems =
         filteredTags.length + (searchText.trim() && !exactMatchExists ? 1 : 0);
 
@@ -348,6 +485,7 @@ const TagsPopup: React.FC<TagsPopupProps> = ({
       handleToggleTag,
       handleCreateNewTag,
       onClose,
+      editingTagId,
     ],
   );
 
@@ -511,56 +649,142 @@ const TagsPopup: React.FC<TagsPopupProps> = ({
                     const isSelected = selectedTagIds.has(tag.id);
                     const itemIndex = createOptionExists ? index + 1 : index;
                     const isFocused = focusedIndex === itemIndex;
+                    const isEditing = editingTagId === tag.id;
+                    const isDeleting = deletingTagId === tag.id;
 
                     return (
-                      <button
+                      <div
                         key={tag.id}
                         ref={(el) => {
                           itemRefs.current[itemIndex] = el;
                         }}
-                        onClick={() =>
-                          !isAlreadyAssigned && handleToggleTag(tag.id)
-                        }
-                        disabled={isAlreadyAssigned}
-                        className={`w-full px-4 py-2 flex items-center justify-between transition-colors text-left ${
+                        className={`w-full px-4 py-2 flex items-center justify-between transition-colors ${
                           isAlreadyAssigned
-                            ? 'bg-gray-50 cursor-not-allowed opacity-60'
+                            ? 'bg-gray-50'
                             : isFocused
                               ? 'bg-purple-100'
                               : isSelected
                                 ? 'bg-purple-50'
                                 : 'hover:bg-gray-50'
                         }`}
-                        type="button"
                       >
-                        <div className="flex items-center space-x-3">
-                          {/* Checkbox */}
-                          {isAlreadyAssigned ? (
-                            <Check className="w-4 h-4 text-green-500" />
-                          ) : isSelected ? (
-                            <CheckSquare className="w-4 h-4 text-purple-600" />
-                          ) : (
-                            <Square className="w-4 h-4 text-gray-400" />
-                          )}
+                        {isEditing ? (
+                          // Edit Mode
+                          <div className="flex items-center space-x-2 flex-1">
+                            <input
+                              ref={editInputRef}
+                              type="text"
+                              value={editingTagValue}
+                              onChange={(e) =>
+                                setEditingTagValue(e.target.value)
+                              }
+                              className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSaveEdit();
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  handleCancelEdit();
+                                }
+                              }}
+                              disabled={isUpdating}
+                            />
+                            <button
+                              onClick={handleSaveEdit}
+                              disabled={isUpdating}
+                              className="p-1 text-green-600 hover:bg-green-100 rounded disabled:opacity-50"
+                              title="Save"
+                              type="button"
+                            >
+                              {isUpdating ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Check className="w-4 h-4" />
+                              )}
+                            </button>
+                            <button
+                              onClick={handleCancelEdit}
+                              disabled={isUpdating}
+                              className="p-1 text-gray-500 hover:bg-gray-100 rounded disabled:opacity-50"
+                              title="Cancel"
+                              type="button"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          // Normal Mode
+                          <>
+                            <button
+                              onClick={() =>
+                                !isAlreadyAssigned && handleToggleTag(tag.id)
+                              }
+                              disabled={isAlreadyAssigned || isDeleting}
+                              className={`flex items-center space-x-3 flex-1 text-left ${
+                                isAlreadyAssigned || isDeleting
+                                  ? 'cursor-not-allowed opacity-60'
+                                  : ''
+                              }`}
+                              type="button"
+                            >
+                              {/* Checkbox */}
+                              {isAlreadyAssigned ? (
+                                <Check className="w-4 h-4 text-green-500" />
+                              ) : isSelected ? (
+                                <CheckSquare className="w-4 h-4 text-purple-600" />
+                              ) : (
+                                <Square className="w-4 h-4 text-gray-400" />
+                              )}
 
-                          {/* Tag Badge */}
-                          <span
-                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                              isAlreadyAssigned
-                                ? 'bg-green-100 text-green-700'
-                                : isSelected
-                                  ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-300'
-                                  : getTagColor(tag.id)
-                            }`}
-                          >
-                            {tag.tag}
-                          </span>
-                        </div>
+                              {/* Tag Badge */}
+                              <span
+                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                                  isAlreadyAssigned
+                                    ? 'bg-green-100 text-green-700'
+                                    : isSelected
+                                      ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-300'
+                                      : getTagColor(tag.id)
+                                }`}
+                              >
+                                {tag.tag}
+                              </span>
 
-                        {isAlreadyAssigned && (
-                          <span className="text-xs text-green-600">Added</span>
+                              {isAlreadyAssigned && (
+                                <span className="text-xs text-green-600">
+                                  Added
+                                </span>
+                              )}
+                            </button>
+
+                            {/* Edit & Delete Icons */}
+                            <div className="flex items-center space-x-1 ml-2">
+                              <button
+                                onClick={(e) => handleStartEdit(tag, e)}
+                                disabled={isDeleting}
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
+                                title="Edit tag"
+                                type="button"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => handleDeleteTag(tag, e)}
+                                disabled={isDeleting}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                                title="Delete tag"
+                                type="button"
+                              >
+                                {isDeleting ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

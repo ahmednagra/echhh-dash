@@ -17,6 +17,7 @@ interface ImportCsvButtonProps {
   disabled?: boolean;
   className?: string;
   onImportComplete?: (successCount: number) => void;
+  iconOnly?: boolean; // NEW: Icon-only mode with tooltip
 }
 
 interface ImportProgress {
@@ -33,9 +34,11 @@ const ImportCsvButton: React.FC<ImportCsvButtonProps> = ({
   disabled = false,
   className = '',
   onImportComplete,
+  iconOnly = false, // NEW
 }) => {
   const [isImporting, setIsImporting] = useState(false);
   const [showProgressModal, setShowProgressModal] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false); // NEW: For icon-only tooltip
   const [progress, setProgress] = useState<ImportProgress>({
     total: 0,
     processed: 0,
@@ -342,14 +345,48 @@ const ImportCsvButton: React.FC<ImportCsvButtonProps> = ({
   return (
     <>
       {/* Import CSV Button */}
-      <button
-        onClick={handleFileSelect}
-        disabled={disabled || isImporting}
-        className={`flex items-center px-4 py-2 bg-gray-50 border border-blue-200 rounded-md text-sm font-medium hover:bg-gray-60 text-gray-700 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ${className}`}
-      >
-        <Download className="w-4 h-4 mr-2 text-gray-500" />
-        {isImporting ? 'Importing...' : 'Import'}
-      </button>
+      {iconOnly ? (
+        // Icon-only mode with tooltip
+        <div className="relative">
+          <button
+            onClick={handleFileSelect}
+            disabled={disabled || isImporting}
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+            className={`p-2.5 rounded-xl border transition-all duration-200 ${
+              disabled || isImporting
+                ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed opacity-50'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-purple-50 hover:text-purple-600 hover:border-purple-300 hover:shadow-md hover:shadow-purple-500/10'
+            } ${className}`}
+            title="Import CSV"
+          >
+            {isImporting ? (
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+          </button>
+          {/* Tooltip */}
+          {showTooltip && !isImporting && (
+            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 z-[9999] pointer-events-none">
+              <div className="px-2.5 py-1 text-xs font-medium bg-gray-900 text-white rounded-lg whitespace-nowrap shadow-lg">
+                Import CSV
+              </div>
+              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+            </div>
+          )}
+        </div>
+      ) : (
+        // Full button mode (original)
+        <button
+          onClick={handleFileSelect}
+          disabled={disabled || isImporting}
+          className={`flex items-center px-4 py-2 bg-gray-50 border border-blue-200 rounded-md text-sm font-medium hover:bg-gray-60 text-gray-700 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ${className}`}
+        >
+          <Download className="w-4 h-4 mr-2 text-gray-500" />
+          {isImporting ? 'Importing...' : 'Import'}
+        </button>
+      )}
 
       {/* Hidden file input */}
       <input

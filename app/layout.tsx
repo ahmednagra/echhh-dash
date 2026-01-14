@@ -1,10 +1,11 @@
-// src/app/layout.tsx - ROOT LAYOUT WITH SINGLE NAVBAR
+// src/app/layout.tsx
 import { ReactNode } from 'react';
 import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/context/AuthContext';
 import { SidebarProvider } from '@/context/SidebarContext';
 import { LocationCacheProvider } from '@/context/LocationCacheContext';
 import { CampaignProvider } from '@/context/CampaignContext';
+import { QueryProvider } from '@/providers/QueryProvider';
 import { Toaster } from 'react-hot-toast';
 import Navbar from '@/components/navbar';
 import ClientOnly from '@/components/ClientOnly';
@@ -28,7 +29,6 @@ export const metadata: Metadata = {
   },
 };
 
-// ADDED: Force dynamic rendering to fix Client Component serialization errors during build
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 
@@ -40,33 +40,36 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         suppressHydrationWarning={true}
       >
         <ClientOnly>
-          <AuthProvider>
-            <CampaignProvider>
-              <LocationCacheProvider>
-                <SidebarProvider>
-                  {/* Single navbar for the entire app */}
-                  <Navbar />
-                  
-                  {/* Main content */}
-                  <main className="w-full">
-                    {children}
-                  </main>
-                  
-                  {/* Toast notifications */}
-                  <Toaster 
-                    position="top-right"
-                    toastOptions={{
-                      duration: 4000,
-                      style: {
-                        background: '#363636',
-                        color: '#fff',
-                      },
-                    }}
-                  />
-                </SidebarProvider>
-              </LocationCacheProvider>
-            </CampaignProvider>
-          </AuthProvider>
+          {/* ✅ QueryProvider added here - provides React Query context */}
+          <QueryProvider>
+            <AuthProvider>
+              <CampaignProvider>
+                <LocationCacheProvider>
+                  <SidebarProvider>
+                    {/* Single navbar for the entire app */}
+                    <Navbar />
+                    
+                    {/* Main content */}
+                    <main className="w-full">
+                      {children}
+                    </main>
+                    
+                    {/* Toast notifications */}
+                    <Toaster 
+                      position="top-right"
+                      toastOptions={{
+                        duration: 4000,
+                        style: {
+                          background: '#363636',
+                          color: '#fff',
+                        },
+                      }}
+                    />
+                  </SidebarProvider>
+                </LocationCacheProvider>
+              </CampaignProvider>
+            </AuthProvider>
+          </QueryProvider>
         </ClientOnly>
       </body>
     </html>

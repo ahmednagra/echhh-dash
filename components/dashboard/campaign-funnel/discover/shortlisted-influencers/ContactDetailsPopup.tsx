@@ -138,7 +138,7 @@ export default function ContactDetailsPopup({
       
       {/* Popup */}
       <div 
-        className="absolute z-50 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+        className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden"
         style={{
           left: position.x,
           top: position.y,

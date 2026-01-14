@@ -9,6 +9,8 @@ import {
   AddTagToInfluencerResponse,
   RemoveTagFromInfluencerRequest,
   RemoveTagFromInfluencerResponse,
+  UpdateTagResponse,
+  DeleteTagResponse,
 } from '@/types/tags';
 import { ENDPOINTS } from '@/services/api/endpoints';
 
@@ -173,6 +175,81 @@ export async function removeTagFromInfluencer(
     return response.data;
   } catch (error) {
     console.error('Client Service: Error in removeTagFromInfluencer:', error);
+    throw error;
+  }
+}
+
+// =============================================================================
+// 🆕 NEW: Update and Delete Tag Functions
+// =============================================================================
+
+/**
+ * Update a tag (client-side)
+ */
+export async function updateTag(
+  tagId: string,
+  tagName: string,
+): Promise<UpdateTagResponse> {
+  try {
+    if (typeof window === 'undefined') {
+      throw new Error('updateTag can only be called from browser');
+    }
+
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    const endpoint = `${API_VERSION}${ENDPOINTS.TAGS.UPDATE(tagId)}`;
+
+    const response = await nextjsApiClient.patch<UpdateTagResponse>(endpoint, {
+      tag: tagName,
+    });
+
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+
+    if (!response.data) {
+      throw new Error('Failed to update tag');
+    }
+
+    return response.data;
+  } catch (error) {
+    console.error('Client Service: Error in updateTag:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a tag (client-side)
+ */
+export async function deleteTag(tagId: string): Promise<DeleteTagResponse> {
+  try {
+    if (typeof window === 'undefined') {
+      throw new Error('deleteTag can only be called from browser');
+    }
+
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    const endpoint = `${API_VERSION}${ENDPOINTS.TAGS.DELETE(tagId)}`;
+
+    const response = await nextjsApiClient.delete<DeleteTagResponse>(endpoint);
+
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+
+    if (!response.data) {
+      throw new Error('Failed to delete tag');
+    }
+
+    return response.data;
+  } catch (error) {
+    console.error('Client Service: Error in deleteTag:', error);
     throw error;
   }
 }

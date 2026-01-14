@@ -517,10 +517,10 @@ export async function getCampaignInfluencers(
       list_id: campaign_list_id
     });
 
-    const response = await apiClient.get<{
+    const response = await nextjsApiClient.get<{
       influencers: CampaignListMember[];
       pagination: PaginationInfo;
-    }>(`${ENDPOINTS.CAMPAIGN_LISTS.LIST_MEMBERS('')}?${queryParams}`);
+    }>(`${API_VERSION}${ENDPOINTS.CAMPAIGN_LISTS.LIST_MEMBERS('')}?${queryParams}`);
 
     if (response.error) {
       console.error('Error fetching paginated campaign influencers:', response.error);
@@ -581,13 +581,13 @@ export async function getAllCampaignInfluencers(
     const queryParams = new URLSearchParams({
       page: '1',
       page_size: '1000', // Large number to get all
-      list_id: campaign_list_id
+      campaign_list_id: campaign_list_id
     });
 
-    const response = await apiClient.get<{
+    const response = await nextjsApiClient.get<{
       influencers: CampaignListMember[];
       pagination: PaginationInfo;
-    }>(`${ENDPOINTS.CAMPAIGN_LISTS.LIST_MEMBERS('')}?${queryParams}`);
+    }>(`${API_VERSION}${ENDPOINTS.CAMPAIGN_LISTS.LIST_MEMBERS('')}?${queryParams}`);
 
     if (response.error) {
       console.error('Error fetching all campaign influencers:', response.error);
@@ -674,7 +674,7 @@ export async function addInfluencerToCampaignList(
     };
 
     // Call the API using the unified API client
-    const response = await apiClient.post<CampaignListMember>(
+    const response = await nextjsApiClient.post<CampaignListMember>(
       ENDPOINTS.CAMPAIGN_LISTS.LIST_MEMBER_CREATE,
       requestData
     );
@@ -710,7 +710,7 @@ export async function removeCampaignInfluencer(
 ): Promise<{ success: boolean; message?: string }> {
   try {
     // Call the API using the unified API client
-    const response = await apiClient.delete<{ success: boolean; message?: string }>(
+    const response = await nextjsApiClient.delete<{ success: boolean; message?: string }>(
       `${ENDPOINTS.CAMPAIGN_LISTS.LIST_MEMBER_DELETE(campaignInfluencerId)}`
     );
 
@@ -781,7 +781,7 @@ export async function checkInfluencerInCampaignList(
 ): Promise<boolean> {
   try {
     // Call the API using the unified API client
-    const response = await apiClient.get<{ exists: boolean }>(
+    const response = await nextjsApiClient.get<{ exists: boolean }>(
       `/api/v0/campaign-list-members/${campaign_list_id}/${influencerId}/check`
     );
 

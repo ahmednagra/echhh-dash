@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { getAllCampaignInfluencers } from '@/services/campaign-influencers/campaign-influencers.client';
+import { useStatuses } from '@/hooks/queries';
 import { 
   CampaignListMember, 
   CampaignInfluencersByStatus 
@@ -13,24 +14,73 @@ import { formatNumber } from '@/utils/format';
 
 interface MessageSentProps {
   campaignData?: Campaign | null;
-  clientReviewStatuses: Status[];  // NEW: Receive from parent
-  statusesLoading: boolean;       // NEW: Receive from parent
+  clientReviewStatuses?: Status[];  // Optional - for backward compatibility
+  statusesLoading?: boolean;        // Optional - for backward compatibility
 }
 
+/**
+ * MessageSent Component
+ * 
+ * Displays all campaign influencers grouped by their outreach status.
+ * 
+ * Data Flow:
+ * 1. Fetches influencer data when campaignData changes
+ * 2. Uses React Query (useStatuses) for status data - SHARED CACHE with other components
+ * 
+ * Note: This component now uses useStatuses hook directly instead of receiving
+ * statuses as props. This allows React Query to deduplicate requests across
+ * all components that need the same data.
+ */
 const MessageSent: React.FC<MessageSentProps> = ({ 
   campaignData, 
-  clientReviewStatuses,  // NEW: Use prop instead of local state
-  statusesLoading       // NEW: Use prop instead of local state
+  clientReviewStatuses: propClientReviewStatuses,
+  statusesLoading: propStatusesLoading
 }) => {
-  // States
+  // ============================================
+  // REACT QUERY HOOKS
+  // ============================================
+  /**
+   * Fetch campaign influencer statuses using React Query
+   * 
+   * This hook shares cache with OutreachTab and other components.
+   * Even if multiple components call this hook simultaneously,
+   * React Query will only make ONE API call.
+   * 
+   * Configuration:
+   * - staleTime: 30 minutes (STALE_TIMES.STATIC)
+   * - Won't refetch on window focus or component remount
+   * - Shared cache across all components using this hook
+   */
+  const { 
+    data: queryStatuses = [], 
+    isLoading: queryStatusesLoading 
+  } = useStatuses('campaign_influencer');
+
+  // Use query data, with props as fallback for backward compatibility
+  const statuses = queryStatuses.length > 0 ? queryStatuses : (propClientReviewStatuses || []);
+  const statusesLoading = queryStatuses.length > 0 ? queryStatusesLoading : (propStatusesLoading || false);
+
+  // Filter for client review statuses (for display purposes)
+  const clientReviewStatuses = useMemo(() => {
+    return statuses.filter(
+      (status: Status) => status.applies_to_field === 'client_review_status_id'
+    );
+  }, [statuses]);
+
+  // ============================================
+  // LOCAL STATE
+  // ============================================
   const [allInfluencers, setAllInfluencers] = useState<CampaignListMember[]>([]);
-  const [statuses, setStatuses] = useState<Status[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
 
+  // ============================================
+  // MEMOIZED DATA
+  // ============================================
+  
   // Group influencers by status using useMemo for performance
   const influencersByStatus = useMemo<CampaignInfluencersByStatus & { all: CampaignListMember[] }>(() => {
     const grouped = allInfluencers.reduce((acc, influencer) => {
@@ -113,7 +163,7 @@ const MessageSent: React.FC<MessageSentProps> = ({
     ];
 
     // Add status options that have data
-    statuses.forEach(status => {
+    statuses.forEach((status: Status) => {
       const statusKey = status.name.toLowerCase();
       const count = influencersByStatus[statusKey as keyof CampaignInfluencersByStatus]?.length || 0;
       
@@ -132,7 +182,11 @@ const MessageSent: React.FC<MessageSentProps> = ({
   // Get current filter info
   const currentFilter = statusFilterOptions.find(option => option.key === selectedFilter) || statusFilterOptions[0];
 
-  // NEW: Get client review status display
+  // ============================================
+  // HELPER FUNCTIONS
+  // ============================================
+  
+  // Get client review status display
   const getClientReviewStatusDisplay = (influencer: CampaignListMember) => {
     if (statusesLoading) {
       return <span className="text-[9px] text-gray-400">Loading...</span>;
@@ -192,11 +246,20 @@ const MessageSent: React.FC<MessageSentProps> = ({
     );
   };
 
-  // Fetch campaign influencers and statuses
+  // ============================================
+  // EFFECTS
+  // ============================================
+  
+  /**
+   * Fetch campaign influencers when campaign data changes
+   * 
+   * Note: Status fetching has been moved to React Query (useStatuses hook)
+   * which handles caching and deduplication automatically.
+   */
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchInfluencers = async () => {
       if (!campaignData?.campaign_lists?.[0]?.id) {
-        console.log('No campaign data or campaign list ID available');
+        console.log('MessageSent: No campaign data or campaign list ID available');
         return;
       }
 
@@ -204,33 +267,27 @@ const MessageSent: React.FC<MessageSentProps> = ({
       setError(null);
 
       try {
-        // Import getStatuses to fetch all campaign influencer statuses for filtering
-        const { getStatuses } = await import('@/services/statuses/statuses.service');
-        const statusesResponse = await getStatuses('campaign_influencer');
-        setStatuses(statusesResponse);
-        console.log('✅ Statuses fetched:', statusesResponse.length);
-
         // Fetch all campaign influencers
         const listId = campaignData.campaign_lists[0].id;
-        console.log('🔄 Fetching all campaign influencers for list:', listId);
+        console.log('🔄 MessageSent: Fetching campaign influencers for list:', listId);
         
         const influencersResponse = await getAllCampaignInfluencers(listId);
         
         if (influencersResponse.success) {
           setAllInfluencers(influencersResponse.influencers);
-          console.log('✅ Campaign influencers fetched:', influencersResponse.influencers.length);
+          console.log('✅ MessageSent: Campaign influencers fetched:', influencersResponse.influencers.length);
         } else {
           throw new Error(influencersResponse.message || 'Failed to fetch campaign influencers');
         }
       } catch (err) {
-        console.error('❌ Error fetching data:', err);
+        console.error('❌ MessageSent: Error fetching influencers:', err);
         setError(err instanceof Error ? err.message : 'An error occurred while fetching data');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
+    fetchInfluencers();
   }, [campaignData?.campaign_lists]);
 
   // Close dropdown when clicking outside
@@ -250,6 +307,10 @@ const MessageSent: React.FC<MessageSentProps> = ({
     };
   }, [isDropdownOpen]);
 
+  // ============================================
+  // EVENT HANDLERS
+  // ============================================
+  
   const toggleDropdown = () => {
     setIsDropdownOpen(!isDropdownOpen);
   };
@@ -259,7 +320,9 @@ const MessageSent: React.FC<MessageSentProps> = ({
     setIsDropdownOpen(false);
   };
 
-  // Show loading state with original design
+  // ============================================
+  // RENDER - Loading State
+  // ============================================
   if (loading) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative h-[600px] flex flex-col">
@@ -273,7 +336,9 @@ const MessageSent: React.FC<MessageSentProps> = ({
     );
   }
 
-  // Show error state with original design
+  // ============================================
+  // RENDER - Error State
+  // ============================================
   if (error) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative h-[600px] flex flex-col">
@@ -290,7 +355,9 @@ const MessageSent: React.FC<MessageSentProps> = ({
     );
   }
 
-  // Show no campaign data state
+  // ============================================
+  // RENDER - No Campaign Data State
+  // ============================================
   if (!campaignData?.campaign_lists?.[0]?.id) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative h-[600px] flex flex-col">
@@ -307,6 +374,9 @@ const MessageSent: React.FC<MessageSentProps> = ({
     );
   }
 
+  // ============================================
+  // RENDER - Main Component
+  // ============================================
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative h-[600px] flex flex-col">
       {/* Header - maintaining original design */}

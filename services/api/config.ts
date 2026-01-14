@@ -24,7 +24,7 @@ if (!baseEnvUrl) {
 
 export const API_CONFIG = {
   baseUrl: `${baseEnvUrl}/${apiVersion}`,
-  timeout: 60000, // 60 seconds (was 30000)
+  timeout: 90000, // 60 seconds (was 30000)
   retryAttempts: 1,
   tokenRefreshEndpoint: '/auth/refresh',
 };

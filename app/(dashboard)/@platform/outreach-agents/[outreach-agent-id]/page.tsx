@@ -7,7 +7,7 @@ import { ArrowLeft, Clock } from 'react-feather';
 import { AssignmentInfluencer } from '@/types/assignment-influencers';
 import { Status } from '@/types/statuses';
 // import { OutreachAgent } from '@/types/outreach-agents';
-import { getStatusList } from '@/services/statuses/statuses.service';
+import { getStatuses } from '@/services/statuses/statuses.client';
 // TODO: Uncomment when endpoint is ready
 // import { getOutreachAgentById } from '@/services/outreach-agents/outreach-agents.client';
 import WelcomeSection, { DashboardTab } from '@/components/dashboard/platform/components/WelcomeSection';
@@ -66,7 +66,7 @@ export default function OutreachAgentDetailPage() {
     try {
       setStatusesLoading(true);
       setStatusesError(null);
-      const statuses = await getStatusList('campaign_influencer');
+      const statuses = await getStatuses('campaign_influencer', 'status_id');
       setAvailableStatuses(statuses);
     } catch (error) {
       console.error('Error fetching statuses:', error);

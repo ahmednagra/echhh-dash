@@ -91,3 +91,40 @@ export interface RemoveTagFromInfluencerResponse {
   removed_tag_id: string;
   remaining_tags: InfluencerTag[];
 }
+// =============================================================================
+// 🆕 NEW: Update and Delete Tag Types
+// =============================================================================
+
+/**
+ * Request to update a tag
+ */
+export interface UpdateTagRequest {
+  tag: string;
+}
+
+/**
+ * Response from updating a tag
+ */
+export interface UpdateTagResponse {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  tag: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  creator?: {
+    id: string;
+    full_name: string;
+    email: string;
+  };
+}
+
+/**
+ * Response from deleting a tag
+ */
+export interface DeleteTagResponse {
+  success: boolean;
+  message: string;
+  deleted_id: string;
+}

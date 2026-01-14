@@ -12,6 +12,7 @@ import { formatNumber } from '@/utils/format';
 import ContactColumn from './columns/ContactColumn';
 import SocialColumn from './columns/SocialColumn'; // ADD THIS
 import { BsInstagram, BsTiktok, BsYoutube } from 'react-icons/bs';
+import { List, Grid } from 'react-feather';
 import ActionColumn from './columns/ActionColumn';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 // Import the ProfileInsightsModal from the discover section
@@ -21,7 +22,7 @@ import { Influencer } from '@/types/insights-iq';
 // Add these imports after the existing imports, around line 16
 import ShortlistedStatusCell from './ShortlistedStatusCell';
 import BulkStatusUpdate from './BulkStatusUpdate';
-import { getStatuses } from '@/services/statuses/statuses.service';
+import { getStatuses } from '@/services/statuses/statuses.client';
 import { Status } from '@/types/statuses';
 import {
   updateCampaignInfluencerShortlistedStatus,
@@ -39,6 +40,13 @@ import {
 import ResizeHandle from '@/components/ui/table/ResizeHandle';
 import XCampaignsColumn from './columns/XCampaignsColumn';
 import ShortlistedInfluencersSummary from './ShortlistedInfluencersSummary';
+import ShortlistedGridView from './ShortlistedGridView';
+
+// View mode type
+type ViewMode = 'table' | 'grid';
+
+// Local storage key for view preference
+const VIEW_MODE_STORAGE_KEY = 'shortlisted_view_mode';
 
 interface ShortlistedTableProps {
   shortlistedMembers: CampaignListMembersResponse;
@@ -83,6 +91,22 @@ const ShortlistedTable: React.FC<ShortlistedTableProps> = ({
   campaignListId,
 }) => {
   const [showPageSizeDropdown, setShowPageSizeDropdown] = useState(false);
+
+  // ========== VIEW MODE STATE (with localStorage persistence) ==========
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      return (saved as ViewMode) || 'table';
+    }
+    return 'table';
+  });
+
+  // Save view mode to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+    }
+  }, [viewMode]);
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set());
   const [sortConfig, setSortConfig] = useState<{
@@ -2295,476 +2319,577 @@ const ShortlistedTable: React.FC<ShortlistedTableProps> = ({
           />
         </div>
       )}
-      <div className="w-12/12 bg-white rounded-lg shadow overflow-hidden flex flex-col">
-        <div className="flex-grow overflow-hidden">
-          <div className="max-h-[735px] overflow-y-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-xs">
-              <thead className="bg-gray-50 sticky top-0 z-10">
-                <tr>
-                  <th
-                    scope="col"
-                    className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isAllCurrentPageSelected}
-                      onChange={toggleAllSelection}
-                      className="h-4 w-4 text-purple-600 border-gray-300 rounded"
-                    />
-                  </th>
-                  {visibleColumnsData.map((column) => (
-                    <th
-                      key={column.key}
-                      scope="col"
-                      className={`px-2 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 group select-none relative ${
-                        column.key === 'tags' ? '' : column.width
-                      }`}
-                      style={
-                        column.key === 'tags'
-                          ? tagsColumnResize.getColumnStyle()
-                          : undefined
-                      }
-                      onClick={() => {
-                        if (tagsColumnResize.justResized) return;
-                        handleSort(column.key);
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="group-hover:text-purple-700 transition-colors duration-200">
-                          {column.key === 'name'
-                            ? `${column.label} (${pagination.total_items})`
-                            : column.label}
-                        </span>
-                        <div className="transform group-hover:scale-110 transition-transform duration-200">
-                          {getSortIcon(column.key)}
-                        </div>
-                      </div>
 
-                      {/* Resize Handle for Tags Column */}
-                      {column.key === 'tags' && (
-                        <ResizeHandle
-                          onMouseDown={tagsColumnResize.handleResizeStart}
-                          isResizing={tagsColumnResize.isResizing}
-                          title="Drag to resize - show more tags"
-                        />
-                      )}
-                    </th>
-                  ))}
-
-                  {/* Insights Column */}
-                  <th
-                    scope="col"
-                    className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-20"
-                  >
-                    <span>Insights</span>
-                  </th>
-
-                  <th
-                    scope="col"
-                    className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-20 relative"
-                  >
-                    <div className="flex items-center justify-center space-x-2">
-                      <div className="column-dropdown">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowColumnDropdown(!showColumnDropdown);
-                          }}
-                          className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 transition-colors"
-                          title="Toggle Columns"
-                        >
-                          <svg
-                            className="w-4 h-4 text-gray-600"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                            />
-                          </svg>
-                        </button>
-
-                        {/* Column Toggle Dropdown */}
-                        {showColumnDropdown && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-40"
-                              onClick={() => setShowColumnDropdown(false)}
-                            ></div>
-
-                            <div className="fixed right-4 top-20 w-56 bg-white rounded-lg shadow-2xl border border-gray-300 z-50 max-h-[28rem] overflow-hidden">
-                              <div className="px-4 py-3 bg-gradient-to-r from-purple-50 to-pink-50 border-b border-gray-200">
-                                <h3 className="text-sm font-semibold text-gray-800 flex items-center">
-                                  <svg
-                                    className="w-4 h-4 mr-2 text-purple-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h2a2 2 0 002-2z"
-                                    />
-                                  </svg>
-                                  Column Visibility
-                                </h3>
-                                <p className="text-xs text-gray-600 mt-1">
-                                  Select columns to display
-                                </p>
-                              </div>
-
-                              <div className="py-3 max-h-80 overflow-y-auto">
-                                {allColumns.map((column) => {
-                                  const hasData =
-                                    columnHasMeaningfulData(column);
-
-                                  return (
-                                    <label
-                                      key={column.key}
-                                      className="flex items-center px-5 py-3 hover:bg-gradient-to-r hover:from-purple-25 hover:to-pink-25 cursor-pointer transition-all duration-150 group"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={visibleColumns.has(column.key)}
-                                        onChange={() =>
-                                          toggleColumnVisibility(column.key)
-                                        }
-                                        className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 focus:ring-2 transition-colors"
-                                      />
-                                      <div className="ml-3 flex-1 min-w-0">
-                                        <span
-                                          className={`text-sm font-medium block truncate transition-colors ${
-                                            hasData
-                                              ? 'text-gray-900 group-hover:text-purple-700'
-                                              : 'text-gray-400 group-hover:text-gray-500'
-                                          }`}
-                                        >
-                                          {column.label}
-                                        </span>
-                                      </div>
-                                      <div className="ml-2 flex-shrink-0">
-                                        {hasData ? (
-                                          <div
-                                            className="w-2 h-2 bg-green-400 rounded-full"
-                                            title="Data available"
-                                          ></div>
-                                        ) : (
-                                          <div
-                                            className="w-2 h-2 bg-gray-300 rounded-full"
-                                            title="No data"
-                                          ></div>
-                                        )}
-                                      </div>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-
-                              <div className="px-4 py-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
-                                <button
-                                  onClick={() => {
-                                    const columnsWithData = new Set<string>();
-                                    allColumns.forEach((column) => {
-                                      if (
-                                        columnHasMeaningfulData(column) ||
-                                        column.defaultVisible
-                                      ) {
-                                        columnsWithData.add(column.key);
-                                      }
-                                    });
-                                    setVisibleColumns(columnsWithData);
-
-                                    if (onVisibleColumnsChange) {
-                                      const visibleColumnKeys =
-                                        Array.from(columnsWithData);
-                                      onVisibleColumnsChange(visibleColumnKeys);
-                                    }
-                                  }}
-                                  className="text-xs text-purple-600 hover:text-purple-700 font-medium transition-colors"
-                                >
-                                  Select All
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    const defaultColumns = new Set<string>();
-                                    allColumns.forEach((column) => {
-                                      if (
-                                        column.defaultVisible &&
-                                        columnHasMeaningfulData(column)
-                                      ) {
-                                        defaultColumns.add(column.key);
-                                      }
-                                    });
-                                    setVisibleColumns(defaultColumns);
-
-                                    if (onVisibleColumnsChange) {
-                                      const visibleColumnKeys =
-                                        Array.from(defaultColumns);
-                                      onVisibleColumnsChange(visibleColumnKeys);
-                                    }
-                                  }}
-                                  className="text-xs text-gray-600 hover:text-gray-700 font-medium transition-colors"
-                                >
-                                  Reset
-                                </button>
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {sortedMembers.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={visibleColumnsData.length + 3}
-                      className="px-3 py-8 text-center text-gray-500"
-                    >
-                      {searchText
-                        ? 'No influencers match your search.'
-                        : 'No shortlisted influencers yet.'}
-                    </td>
-                  </tr>
-                ) : (
-                  sortedMembers.map((member) => (
-                    <tr key={member.id} className="hover:bg-gray-50">
-                      <td className="px-2 py-4 whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          checked={selectedInfluencers.includes(
-                            member.id ?? '',
-                          )}
-                          onChange={() => toggleRowSelection(member.id ?? '')}
-                          className="h-4 w-4 text-purple-600 border-gray-300 rounded"
-                        />
-                      </td>
-                      {visibleColumnsData.map((column) => (
-                        <td
-                          key={column.key}
-                          className={`px-2 py-4 whitespace-nowrap text-sm text-gray-500 ${
-                            column.key === 'tags' ? '' : column.width
-                          }`}
-                          style={
-                            column.key === 'tags'
-                              ? tagsColumnResize.getColumnStyle()
-                              : undefined
-                          }
-                        >
-                          <span
-                            className={
-                              column.key === 'tags' ? '' : 'truncate block'
-                            }
-                          >
-                            {column.render
-                              ? column.render(column.getValue(member), member)
-                              : column.getValue(member) || 'N/A'}
-                          </span>
-                        </td>
-                      ))}
-
-                      {/* Insights Column */}
-                      <td className="px-2 py-4 whitespace-nowrap text-xs">
-                        <button
-                          onClick={() => handleProfileInsights(member)}
-                          className="text-gray-500 flex items-center hover:text-gray-700 transition-colors"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4 mr-1"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                            />
-                          </svg>
-                          <span className="truncate">Profile Insights</span>
-                        </button>
-                      </td>
-
-                      <td className="px-2 py-4 whitespace-nowrap text-center w-20">
-                        <ActionColumn
-                          member={member}
-                          isRemoving={removingInfluencers.includes(
-                            member.id ?? '',
-                          )}
-                          onRemovingChange={onRemovingChange}
-                          removingInfluencers={removingInfluencers}
-                          selectedInfluencers={selectedInfluencers}
-                          onSelectionChange={onSelectionChange}
-                          onInfluencerRemoved={onInfluencerRemoved}
-                          onContactsChanged={handleContactsChanged}
-                          onRowUpdate={handleRowUpdate}
-                          // New props for refresh functionality
-                          onRefreshProfileData={handleRefreshProfileData}
-                          isRefreshingProfileData={
-                            isRefreshingProfile &&
-                            refreshingMemberId === member.id
-                          }
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Pagination */}
-        <div className="px-3 py-3 flex items-center justify-between border-t border-gray-200 mt-auto">
-          <div className="flex-1 flex justify-between items-center">
-            <div className="flex">
+      {/* ========== VIEW TOGGLE TOOLBAR ========== */}
+      <div className="flex items-center justify-between mb-4 bg-white rounded-lg shadow px-4 py-3">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600 font-medium">View:</span>
+            <div className="flex border border-gray-200 rounded-lg overflow-hidden">
               <button
-                onClick={() => handlePageChange(pagination.page - 1)}
-                disabled={!pagination.has_previous}
-                className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setViewMode('table')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors rounded-lg ${
+                  viewMode === 'table'
+                    ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-transparent'
+                }`}
+                title="Table View"
               >
-                <span className="sr-only">Previous</span>
-                <svg
-                  className="h-5 w-5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+                <List className="w-4 h-4" />
+                Table
               </button>
-
-              {pageNumbers.map((pageNum, index) => (
-                <div key={index}>
-                  {pageNum === '...' ? (
-                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                      ...
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handlePageChange(pageNum as number)}
-                      className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
-                        pageNum === pagination.page
-                          ? 'bg-pink-50 text-pink-600 border-pink-300'
-                          : 'bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  )}
-                </div>
-              ))}
-
               <button
-                onClick={() => handlePageChange(pagination.page + 1)}
-                disabled={!pagination.has_next}
-                className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setViewMode('grid')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors rounded-lg ${
+                  viewMode === 'grid'
+                    ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-transparent'
+                }`}
+                title="Grid View"
               >
-                <span className="sr-only">Next</span>
-                <svg
-                  className="h-5 w-5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+                <Grid className="w-4 h-4" />
+                Grid
               </button>
             </div>
-            <div className="flex items-center">
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">{startItem}</span> to{' '}
-                <span className="font-medium">{endItem}</span> of{' '}
-                <span className="font-medium">{pagination.total_items}</span>{' '}
-                entries
-              </p>
-              <div className="ml-2 relative page-size-dropdown">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowPageSizeDropdown(!showPageSizeDropdown);
+          </div>
+
+          {/* Select All - Only show in Grid view (Fix #1) */}
+          {viewMode === 'grid' && sortedMembers.length > 0 && (
+            <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isAllCurrentPageSelected}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate =
+                        selectedInfluencers.length > 0 &&
+                        !isAllCurrentPageSelected;
+                    }
                   }}
-                  className="bg-white border border-gray-300 rounded-md shadow-sm px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none flex items-center"
-                >
-                  Show{' '}
-                  {pagination.page_size >= pagination.total_items
-                    ? 'All'
-                    : pagination.page_size}
-                  <svg
-                    className={`-mr-1 ml-1 h-5 w-5 transform transition-transform ${showPageSizeDropdown ? 'rotate-180' : ''}`}
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
+                  onChange={toggleAllSelection}
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                />
+                <span className="ml-2 text-sm text-gray-600">Select all</span>
+              </label>
+              {selectedInfluencers.length > 0 && (
+                <span className="text-sm text-purple-600 font-medium">
+                  ({selectedInfluencers.length} selected)
+                </span>
+              )}
+            </div>
+          )}
+        </div>
 
-                {showPageSizeDropdown && (
-                  <div className="absolute right-0 bottom-full mb-1 w-32 bg-white border border-gray-300 rounded-md shadow-lg z-50">
-                    <div className="py-1">
-                      {pageSizeOptions.map((option, index) => {
-                        const isObject = typeof option === 'object';
-                        const value = isObject ? option.value : option;
-                        const label = isObject
-                          ? option.label
-                          : `Show ${option}`;
-
-                        let isActive;
-                        if (isObject) {
-                          isActive = pagination.page_size === value;
-                        } else {
-                          isActive = pagination.page_size === value;
+        {/* Right side - Count */}
+        <span className="text-sm text-gray-500">
+          {sortedMembers.length} influencer
+          {sortedMembers.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+      {/* ========== CONDITIONAL VIEW RENDERING ========== */}
+      {viewMode === 'grid' ? (
+        <ShortlistedGridView
+          members={sortedMembers}
+          selectedInfluencers={selectedInfluencers}
+          onSelectionChange={onSelectionChange}
+          visibleColumns={visibleColumns}
+          getAdditionalMetric={getAdditionalMetric}
+          getProfilePicture={getProfilePicture}
+          getPlatformName={getPlatformName}
+          getPlatformIcon={getPlatformIcon}
+          formatLocation={formatLocation}
+          formatEngagementRate={formatEngagementRate}
+          getCombinedAverageViews={getCombinedAverageViews}
+          onProfileInsights={handleProfileInsights}
+          onRowUpdate={handleRowUpdate}
+          onRemovingChange={onRemovingChange}
+          removingInfluencers={removingInfluencers}
+          onInfluencerRemoved={onInfluencerRemoved}
+          onRefreshProfileData={handleRefreshProfileData}
+          refreshingMemberId={refreshingMemberId}
+          isRefreshingProfile={isRefreshingProfile}
+          shortlistedStatuses={shortlistedStatuses}
+          onShortlistedStatusChange={handleShortlistedStatusChange}
+          updatingStatus={updatingStatus}
+          statusesLoading={statusesLoading}
+          localInfluencerUpdates={localInfluencerUpdates}
+          searchText={searchText}
+        />
+      ) : (
+        <div className="w-12/12 bg-white rounded-lg shadow overflow-hidden flex flex-col">
+          <div className="flex-grow overflow-hidden">
+            <div className="max-h-[735px] overflow-y-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-xs">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th
+                      scope="col"
+                      className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isAllCurrentPageSelected}
+                        onChange={toggleAllSelection}
+                        className="h-4 w-4 text-purple-600 border-gray-300 rounded"
+                      />
+                    </th>
+                    {visibleColumnsData.map((column) => (
+                      <th
+                        key={column.key}
+                        scope="col"
+                        className={`px-2 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-200 group select-none relative ${
+                          column.key === 'tags' ? '' : column.width
+                        }`}
+                        style={
+                          column.key === 'tags'
+                            ? tagsColumnResize.getColumnStyle()
+                            : undefined
                         }
+                        onClick={() => {
+                          if (tagsColumnResize.justResized) return;
+                          handleSort(column.key);
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="group-hover:text-purple-700 transition-colors duration-200">
+                            {column.key === 'name'
+                              ? `${column.label} (${pagination.total_items})`
+                              : column.label}
+                          </span>
+                          <div className="transform group-hover:scale-110 transition-transform duration-200">
+                            {getSortIcon(column.key)}
+                          </div>
+                        </div>
 
-                        return (
+                        {/* Resize Handle for Tags Column */}
+                        {column.key === 'tags' && (
+                          <ResizeHandle
+                            onMouseDown={tagsColumnResize.handleResizeStart}
+                            isResizing={tagsColumnResize.isResizing}
+                            title="Drag to resize - show more tags"
+                          />
+                        )}
+                      </th>
+                    ))}
+
+                    {/* Insights Column */}
+                    <th
+                      scope="col"
+                      className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-20"
+                    >
+                      <span>Insights</span>
+                    </th>
+
+                    <th
+                      scope="col"
+                      className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-20 relative"
+                    >
+                      <div className="flex items-center justify-center space-x-2">
+                        <div className="column-dropdown">
                           <button
-                            key={index}
                             onClick={(e) => {
                               e.stopPropagation();
-                              handlePageSizeChange(value);
+                              setShowColumnDropdown(!showColumnDropdown);
                             }}
-                            className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                              isActive
-                                ? 'bg-pink-50 text-pink-600 font-medium'
-                                : 'text-gray-700'
-                            }`}
+                            className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 transition-colors"
+                            title="Toggle Columns"
                           >
-                            {label}
+                            <svg
+                              className="w-4 h-4 text-gray-600"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                              />
+                            </svg>
                           </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+
+                          {/* Column Toggle Dropdown */}
+                          {showColumnDropdown && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setShowColumnDropdown(false)}
+                              ></div>
+
+                              <div className="fixed right-4 top-20 w-56 bg-white rounded-lg shadow-2xl border border-gray-300 z-50 max-h-[28rem] overflow-hidden">
+                                <div className="px-4 py-3 bg-gradient-to-r from-purple-50 to-pink-50 border-b border-gray-200">
+                                  <h3 className="text-sm font-semibold text-gray-800 flex items-center">
+                                    <svg
+                                      className="w-4 h-4 mr-2 text-purple-600"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h2a2 2 0 002-2z"
+                                      />
+                                    </svg>
+                                    Column Visibility
+                                  </h3>
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    Select columns to display
+                                  </p>
+                                </div>
+
+                                <div className="py-3 max-h-80 overflow-y-auto">
+                                  {allColumns.map((column) => {
+                                    const hasData =
+                                      columnHasMeaningfulData(column);
+
+                                    return (
+                                      <label
+                                        key={column.key}
+                                        className="flex items-center px-5 py-3 hover:bg-gradient-to-r hover:from-purple-25 hover:to-pink-25 cursor-pointer transition-all duration-150 group"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={visibleColumns.has(
+                                            column.key,
+                                          )}
+                                          onChange={() =>
+                                            toggleColumnVisibility(column.key)
+                                          }
+                                          className="h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 focus:ring-2 transition-colors"
+                                        />
+                                        <div className="ml-3 flex-1 min-w-0">
+                                          <span
+                                            className={`text-sm font-medium block truncate transition-colors ${
+                                              hasData
+                                                ? 'text-gray-900 group-hover:text-purple-700'
+                                                : 'text-gray-400 group-hover:text-gray-500'
+                                            }`}
+                                          >
+                                            {column.label}
+                                          </span>
+                                        </div>
+                                        <div className="ml-2 flex-shrink-0">
+                                          {hasData ? (
+                                            <div
+                                              className="w-2 h-2 bg-green-400 rounded-full"
+                                              title="Data available"
+                                            ></div>
+                                          ) : (
+                                            <div
+                                              className="w-2 h-2 bg-gray-300 rounded-full"
+                                              title="No data"
+                                            ></div>
+                                          )}
+                                        </div>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="px-4 py-4 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
+                                  <button
+                                    onClick={() => {
+                                      const columnsWithData = new Set<string>();
+                                      allColumns.forEach((column) => {
+                                        if (
+                                          columnHasMeaningfulData(column) ||
+                                          column.defaultVisible
+                                        ) {
+                                          columnsWithData.add(column.key);
+                                        }
+                                      });
+                                      setVisibleColumns(columnsWithData);
+
+                                      if (onVisibleColumnsChange) {
+                                        const visibleColumnKeys =
+                                          Array.from(columnsWithData);
+                                        onVisibleColumnsChange(
+                                          visibleColumnKeys,
+                                        );
+                                      }
+                                    }}
+                                    className="text-xs text-purple-600 hover:text-purple-700 font-medium transition-colors"
+                                  >
+                                    Select All
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const defaultColumns = new Set<string>();
+                                      allColumns.forEach((column) => {
+                                        if (
+                                          column.defaultVisible &&
+                                          columnHasMeaningfulData(column)
+                                        ) {
+                                          defaultColumns.add(column.key);
+                                        }
+                                      });
+                                      setVisibleColumns(defaultColumns);
+
+                                      if (onVisibleColumnsChange) {
+                                        const visibleColumnKeys =
+                                          Array.from(defaultColumns);
+                                        onVisibleColumnsChange(
+                                          visibleColumnKeys,
+                                        );
+                                      }
+                                    }}
+                                    className="text-xs text-gray-600 hover:text-gray-700 font-medium transition-colors"
+                                  >
+                                    Reset
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {sortedMembers.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={visibleColumnsData.length + 3}
+                        className="px-3 py-8 text-center text-gray-500"
+                      >
+                        {searchText
+                          ? 'No influencers match your search.'
+                          : 'No shortlisted influencers yet.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedMembers.map((member) => (
+                      <tr key={member.id} className="hover:bg-gray-50">
+                        <td className="px-2 py-4 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={selectedInfluencers.includes(
+                              member.id ?? '',
+                            )}
+                            onChange={() => toggleRowSelection(member.id ?? '')}
+                            className="h-4 w-4 text-purple-600 border-gray-300 rounded"
+                          />
+                        </td>
+                        {visibleColumnsData.map((column) => (
+                          <td
+                            key={column.key}
+                            className={`px-2 py-4 whitespace-nowrap text-sm text-gray-500 ${
+                              column.key === 'tags' ? '' : column.width
+                            }`}
+                            style={
+                              column.key === 'tags'
+                                ? tagsColumnResize.getColumnStyle()
+                                : undefined
+                            }
+                          >
+                            <span
+                              className={
+                                column.key === 'tags' ? '' : 'truncate block'
+                              }
+                            >
+                              {column.render
+                                ? column.render(column.getValue(member), member)
+                                : column.getValue(member) || 'N/A'}
+                            </span>
+                          </td>
+                        ))}
+
+                        {/* Insights Column */}
+                        <td className="px-2 py-4 whitespace-nowrap text-xs">
+                          <button
+                            onClick={() => handleProfileInsights(member)}
+                            className="text-gray-500 flex items-center hover:text-gray-700 transition-colors"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-4 w-4 mr-1"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                              />
+                            </svg>
+                            <span className="truncate">Profile Insights</span>
+                          </button>
+                        </td>
+
+                        <td className="px-2 py-4 whitespace-nowrap text-center w-20">
+                          <ActionColumn
+                            member={member}
+                            isRemoving={removingInfluencers.includes(
+                              member.id ?? '',
+                            )}
+                            onRemovingChange={onRemovingChange}
+                            removingInfluencers={removingInfluencers}
+                            selectedInfluencers={selectedInfluencers}
+                            onSelectionChange={onSelectionChange}
+                            onInfluencerRemoved={onInfluencerRemoved}
+                            onContactsChanged={handleContactsChanged}
+                            onRowUpdate={handleRowUpdate}
+                            // New props for refresh functionality
+                            onRefreshProfileData={handleRefreshProfileData}
+                            isRefreshingProfileData={
+                              isRefreshingProfile &&
+                              refreshingMemberId === member.id
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Pagination */}
+      <div className="mt-4 px-3 py-3 flex items-center justify-between bg-white rounded-lg shadow">
+        <div className="flex-1 flex justify-between items-center">
+          <div className="flex">
+            <button
+              onClick={() => handlePageChange(pagination.page - 1)}
+              disabled={!pagination.has_previous}
+              className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="sr-only">Previous</span>
+              <svg
+                className="h-5 w-5"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+
+            {pageNumbers.map((pageNum, index) => (
+              <div key={index}>
+                {pageNum === '...' ? (
+                  <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                    ...
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => handlePageChange(pageNum as number)}
+                    className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
+                      pageNum === pagination.page
+                        ? 'bg-pink-50 text-pink-600 border-pink-300'
+                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
                 )}
               </div>
+            ))}
+
+            <button
+              onClick={() => handlePageChange(pagination.page + 1)}
+              disabled={!pagination.has_next}
+              className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="sr-only">Next</span>
+              <svg
+                className="h-5 w-5"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="flex items-center">
+            <p className="text-sm text-gray-700">
+              Showing <span className="font-medium">{startItem}</span> to{' '}
+              <span className="font-medium">{endItem}</span> of{' '}
+              <span className="font-medium">{pagination.total_items}</span>{' '}
+              entries
+            </p>
+            <div className="ml-2 relative page-size-dropdown">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowPageSizeDropdown(!showPageSizeDropdown);
+                }}
+                className="bg-white border border-gray-300 rounded-md shadow-sm px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none flex items-center"
+              >
+                Show{' '}
+                {pagination.page_size >= pagination.total_items
+                  ? 'All'
+                  : pagination.page_size}
+                <svg
+                  className={`-mr-1 ml-1 h-5 w-5 transform transition-transform ${showPageSizeDropdown ? 'rotate-180' : ''}`}
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+
+              {showPageSizeDropdown && (
+                <div className="absolute right-0 bottom-full mb-1 w-32 bg-white border border-gray-300 rounded-md shadow-lg z-50">
+                  <div className="py-1">
+                    {pageSizeOptions.map((option, index) => {
+                      const isObject = typeof option === 'object';
+                      const value = isObject ? option.value : option;
+                      const label = isObject ? option.label : `Show ${option}`;
+
+                      let isActive;
+                      if (isObject) {
+                        isActive = pagination.page_size === value;
+                      } else {
+                        isActive = pagination.page_size === value;
+                      }
+
+                      return (
+                        <button
+                          key={index}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePageSizeChange(value);
+                          }}
+                          className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                            isActive
+                              ? 'bg-pink-50 text-pink-600 font-medium'
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
-
       {/* Profile Insights Modal */}
       <ProfileInsightsModal
         selectedPlatform={selectedPlatform}

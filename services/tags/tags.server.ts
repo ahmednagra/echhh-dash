@@ -8,6 +8,9 @@ import {
   AddTagToInfluencerResponse,
   RemoveTagFromInfluencerRequest,
   RemoveTagFromInfluencerResponse,
+  UpdateTagRequest,
+  UpdateTagResponse,
+  DeleteTagResponse,
 } from '@/types/tags';
 import { ENDPOINTS } from '@/services/api/endpoints';
 
@@ -137,6 +140,82 @@ export async function removeTagFromInfluencerServer(
       '💥 Tags Server: Error in removeTagFromInfluencerServer:',
       error,
     );
+    throw error;
+  }
+}
+
+// =============================================================================
+// 🆕 NEW: Update and Delete Tag Functions
+// =============================================================================
+
+/**
+ * Update a tag (server-side)
+ */
+export async function updateTagServer(
+  tagId: string,
+  data: UpdateTagRequest,
+  authToken?: string,
+): Promise<UpdateTagResponse> {
+  try {
+    console.log(`🏷️ Tags Server: Updating tag ${tagId}`, data);
+
+    const endpoint = ENDPOINTS.TAGS.UPDATE(tagId);
+
+    const response = await serverApiClient.patch<UpdateTagResponse>(
+      endpoint,
+      data,
+      {},
+      authToken,
+    );
+
+    if (response.error) {
+      console.error('❌ Tags Server: Error updating tag:', response.error);
+      throw new Error(response.error.message);
+    }
+
+    if (!response.data) {
+      throw new Error('No response data received');
+    }
+
+    console.log('✅ Tags Server: Tag updated successfully', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('💥 Tags Server: Error in updateTagServer:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a tag (server-side)
+ */
+export async function deleteTagServer(
+  tagId: string,
+  authToken?: string,
+): Promise<DeleteTagResponse> {
+  try {
+    console.log(`🏷️ Tags Server: Deleting tag ${tagId}`);
+
+    const endpoint = ENDPOINTS.TAGS.DELETE(tagId);
+
+    const response = await serverApiClient.delete<DeleteTagResponse>(
+      endpoint,
+      {},
+      authToken,
+    );
+
+    if (response.error) {
+      console.error('❌ Tags Server: Error deleting tag:', response.error);
+      throw new Error(response.error.message);
+    }
+
+    if (!response.data) {
+      throw new Error('No response data received');
+    }
+
+    console.log('✅ Tags Server: Tag deleted successfully', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('💥 Tags Server: Error in deleteTagServer:', error);
     throw error;
   }
 }

@@ -22,11 +22,23 @@ import { Platform } from '@/types/platform';
 import { formatNumber } from '@/utils/format';
 import { useDiscoverTabState } from '@/store/campaign-tabs-store';
 import { debounce } from 'lodash';
+import { processAISearchResults } from '@/utils/influencer-mapper';
+import { InfluencerSearchResults } from '@/types/ai';
 
 interface DiscoverTabProps {
   campaignData?: Campaign | null;
   isNewCampaign?: boolean;
   onCampaignCreated?: (campaign: Campaign) => void;
+  aiDiscoveredInfluencers?: AIDiscoveredInfluencers | null;
+}
+
+// Type for AI-discovered influencers passed from CampaignFunnelSection
+export interface AIDiscoveredInfluencers {
+  searchResults: InfluencerSearchResults;
+  filtersUsed?: Record<string, any>;
+  appliedFilters?: Record<string, any>;
+  totalCount: number;
+  timestamp: number;
 }
 
 // Define default parameters that will be applied in the background
@@ -49,6 +61,7 @@ const DiscoverTab: React.FC<DiscoverTabProps> = ({
   campaignData = null,
   isNewCampaign = false,
   onCampaignCreated,
+  aiDiscoveredInfluencers,
 }) => {
   // Get campaign ID for state management
   const campaignId = useMemo(
@@ -66,6 +79,60 @@ const DiscoverTab: React.FC<DiscoverTabProps> = ({
 
   // NEW: Track load count for custom pagination pattern
   const loadCount = useRef(0);
+
+  // Track previous AI results timestamp to detect changes
+  const prevAITimestamp = useRef<number | null>(null);
+
+  // Handle AI-discovered influencers from chat
+  useEffect(() => {
+
+    if (!aiDiscoveredInfluencers) return;
+    
+    // Check if this is a new result (different timestamp)
+    if (prevAITimestamp.current === aiDiscoveredInfluencers.timestamp) {
+      return; // Same results, skip
+    }
+    
+    prevAITimestamp.current = aiDiscoveredInfluencers.timestamp;
+    
+    const { searchResults, appliedFilters, totalCount } = aiDiscoveredInfluencers;
+    
+    if (!searchResults?.influencers || searchResults.influencers.length === 0) {
+      console.log('🤖 AI results empty, skipping update');
+      return;
+    }
+    
+    console.log('🤖 DiscoverTab: Processing AI discovered influencers');
+    console.log('🤖 Influencers count:', searchResults.influencers.length);
+    // Use shared mapper - same mapping as manual filters route
+    const { 
+      discoverInfluencers, 
+      discoveredCreatorsResults, 
+      totalResults: mappedTotalResults 
+    } = processAISearchResults(searchResults);
+    
+    console.log('Returned AI Data 04 Processed AI Data:', {
+      discoverInfluencers,
+      discoveredCreatorsResults,
+      mappedTotalResults
+    });
+
+    // Update state - same format as manual filters
+    setInfluencers(discoverInfluencers);
+    setDiscoveredCreatorsResults(discoveredCreatorsResults);
+    setTotalResults(mappedTotalResults);
+    // Update search params if AI provided applied filters
+    if (aiDiscoveredInfluencers.appliedFilters) {
+      setSearchParams(aiDiscoveredInfluencers.appliedFilters); // ← Replace entirely
+    }
+    // Reset load count since this is a fresh AI search
+    loadCount.current = 1;
+    
+    // Switch to discovered tab to show results
+    setActiveFilter('discovered');
+    
+    console.log('✅ DiscoverTab: AI results applied successfully');
+  }, [aiDiscoveredInfluencers]);
 
   // Prepare age group from campaign data
   const defaultFilters = campaignData?.default_filters;
@@ -782,6 +849,10 @@ const DiscoverTab: React.FC<DiscoverTabProps> = ({
     return <EmptyState onStartDiscovery={handleStartDiscovery} />;
   }
 
+  console.log('Returned AI Data 05:::', influencers)
+  console.log('Returned AI Data 06:::', discoveredCreatorsResults)
+  console.log('Returned AI Data 07:::', totalResults)
+  console.log('Returned AI Data 08:::', searchParams)
   // Show influencer results
   return (
     <div>
@@ -813,30 +884,28 @@ const DiscoverTab: React.FC<DiscoverTabProps> = ({
           )}
         </div>
 
-        {/* Tab Navigation - Sky Blue with Simple Shadow */}
-        <div className="flex mt-3 md:mt-0">
-          <div className="bg-white rounded-full flex overflow-hidden shadow-sm border border-gray-200">
-            <button
-              className={`px-6 py-1.5 text-sm font-medium transition-all duration-200 hover:ring-2 hover:ring-sky-400 hover:ring-opacity-50 ${
-                activeFilter === 'discovered'
-                  ? 'bg-gradient-to-r from-sky-600 to-sky-500 text-white shadow-lg'
-                  : 'bg-gradient-to-r from-sky-300 to-sky-200 text-sky-700 shadow-md'
-              }`}
-              onClick={() => setActiveFilter('discovered')}
-            >
-              Discovered ({formatNumber(totalResults) || 0})
-            </button>
-            <button
-              className={`px-6 py-1.5 text-sm font-medium transition-all duration-200 hover:ring-2 hover:ring-sky-400 hover:ring-opacity-50 ${
-                activeFilter === 'shortlisted'
-                  ? 'bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-lg'
-                  : 'bg-gradient-to-r from-sky-200 to-sky-300 text-sky-700 shadow-md'
-              }`}
-              onClick={() => setActiveFilter('shortlisted')}
-            >
-              Shortlisted ({formatNumber(shortlistedCount)})
-            </button>
-          </div>
+        {/* Tab Navigation - Matching Main Tabs Style */}
+        <div className="flex mt-3 md:mt-0 gap-2">
+          <button
+            className={`px-5 py-2 text-sm rounded-full transition-all duration-200 border ${
+              activeFilter === 'discovered'
+                ? 'font-bold bg-[#E8DFF5] text-[#6B4C9A] border-[#A590D1]'
+                : 'font-semibold bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 border-gray-200 hover:border-gray-300 hover:shadow-sm transform hover:scale-[1.01]'
+            }`}
+            onClick={() => setActiveFilter('discovered')}
+          >
+            Discovered ({formatNumber(totalResults) || 0})
+          </button>
+          <button
+            className={`px-5 py-2 text-sm rounded-full transition-all duration-200 border ${
+              activeFilter === 'shortlisted'
+                ? 'font-bold bg-[#E8DFF5] text-[#6B4C9A] border-[#A590D1]'
+                : 'font-semibold bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 border-gray-200 hover:border-gray-300 hover:shadow-sm transform hover:scale-[1.01]'
+            }`}
+            onClick={() => setActiveFilter('shortlisted')}
+          >
+            Shortlisted ({formatNumber(shortlistedCount)})
+          </button>
         </div>
       </div>
 

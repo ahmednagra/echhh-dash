@@ -21,7 +21,7 @@ import {
 } from '@/types/outreach-manager-campaigns';
 import { AssignmentInfluencer } from '@/types/assignment-influencers';
 import { Status } from '@/types/statuses';
-import { getStatusList } from '@/services/statuses/statuses.service';
+import { getStatusList } from '@/services/statuses/statuses.client';
 import MembersTable from '@/components/dashboard/platform/components/MembersTable';
 
 // ✅ FIXED: Currency symbols map with proper symbols

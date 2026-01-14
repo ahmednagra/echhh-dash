@@ -1,5 +1,97 @@
 // src/services/api/endpoints.ts
 
+/**
+ * AI Service Base URL
+ * This should be configured in your environment variables
+ */
+const appEnv = process.env.NEXT_PUBLIC_APP_ENV || 'development';
+
+let AI_SERVICE_BASE_URL = '';
+
+if (appEnv === 'production') {
+  AI_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL_PRO!;
+} else if (appEnv === 'development') {
+  AI_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL_DEV!;
+} else if (appEnv === 'local') { // Added support for 'local' environment
+  AI_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL_LOC!;
+} else {
+  // Fallback for any other environment names to 'local'
+  AI_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL_LOC!;
+}
+/**
+ * AI Endpoints
+ *
+ * All AI-related endpoints following the new professional structure
+ * Matches backend: /api/v1/ai/...
+ */
+export const AI_ENDPOINTS = {
+  // ==========================================================================
+  // MESSAGES
+  // ==========================================================================
+  MESSAGES: {
+    /**
+     * Send a message to AI
+     * POST /api/v1/ai/messages
+     */
+    SEND: `${AI_SERVICE_BASE_URL}/ai/messages`,
+  },
+
+  // ==========================================================================
+  // CONVERSATIONS
+  // ==========================================================================
+  CONVERSATIONS: {
+    /**
+     * List conversations (with optional campaign_id filter)
+     * GET /api/v1/ai/conversations?campaign_id=...
+     */
+    LIST: `${AI_SERVICE_BASE_URL}/ai/conversations`,
+
+    /**
+     * Create a new conversation
+     * POST /api/v1/ai/conversations
+     */
+    CREATE: `${AI_SERVICE_BASE_URL}/ai/conversations`,
+
+    /**
+     * Get single conversation
+     * GET /api/v1/ai/conversations/:conversationId
+     */
+    GET: (conversationId: string) =>
+      `${AI_SERVICE_BASE_URL}/ai/conversations/${conversationId}`,
+
+    /**
+     * Delete conversation
+     * DELETE /api/v1/ai/conversations/:conversationId
+     */
+    DELETE: (conversationId: string) =>
+      `${AI_SERVICE_BASE_URL}/ai/conversations/${conversationId}`,
+
+    /**
+     * Get conversation messages (cursor-based pagination)
+     * GET /api/v1/ai/conversations/:conversationId/messages?limit=50&cursor=...&direction=before
+     */
+    MESSAGES: (conversationId: string) =>
+      `${AI_SERVICE_BASE_URL}/ai/conversations/${conversationId}/messages`,
+  },
+
+  // ==========================================================================
+  // HEALTH & STATUS
+  // ==========================================================================
+  HEALTH: {
+    /**
+     * AI Service health check
+     * GET /api/v1/ai/health
+     */
+    CHECK: `${AI_SERVICE_BASE_URL}/ai/health`,
+
+    /**
+     * Get agents status
+     * GET /api/v1/ai/agents/status
+     */
+    AGENTS_STATUS: `${AI_SERVICE_BASE_URL}/ai/agents/status`,
+  },
+};
+
 export const ENDPOINTS = {
   AUTH: {
     LOGIN: '/auth/login',
@@ -107,6 +199,9 @@ export const ENDPOINTS = {
     CREATE_BULK: '/tags/bulk',
     ADD_TO_INFLUENCER: (campaignInfluencerId: string) => `/tags/campaign-influencer/${campaignInfluencerId}/add`,
     REMOVE_FROM_INFLUENCER: (campaignInfluencerId: string) => `/tags/campaign-influencer/${campaignInfluencerId}/remove`,
+    // 🆕 NEW: Update and Delete tag endpoints
+    UPDATE: (tagId: string) => `/tags/${tagId}`,
+    DELETE: (tagId: string) => `/tags/${tagId}`,
   },
   // SINGLE CONSOLIDATED INFLUENCERS SECTION
   INFLUENCERS: {
@@ -594,6 +689,11 @@ export const ENDPOINTS = {
     DETAIL: (id: string) => `/external-api-endpoints/${id}`,
     ACTIVE_LIST: '/external-api-endpoints/active/list',
     BY_CODE: (code: string) => `/external-api-endpoints/code/${code}`,
-  }
+    BY_PROVIDER: (providerId: string) => `/external-api-endpoints/provider/${providerId}/endpoints`,
+    BY_DATA_TYPE: (dataType: string) => `/external-api-endpoints/data-type/${dataType}/endpoints`,
+    TOGGLE_STATUS: (id: string) => `/external-api-endpoints/${id}/toggle-status`,
+    STATS: '/external-api-endpoints/stats/overview',
+  },
 
+  AI: AI_ENDPOINTS,
 };

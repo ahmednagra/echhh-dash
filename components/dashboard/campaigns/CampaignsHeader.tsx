@@ -36,7 +36,7 @@ export default function CampaignsHeader({
           {onCreateClick ? (
             <button
               onClick={handleCreateClick}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl flex items-center hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg text-sm"
+              className="px-5 py-2 text-sm rounded-full transition-all duration-200 border font-bold bg-[#E8DFF5] text-[#6B4C9A] border-[#A590D1] flex items-center hover:shadow-sm transform hover:scale-[1.01]"
             >
               <Plus className="h-4 w-4 mr-2" />
               {createButtonText}
@@ -44,7 +44,7 @@ export default function CampaignsHeader({
           ) : (
             <Link
               href={createButtonHref}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl flex items-center hover:from-purple-700 hover:to-pink-700 transition-all duration-200 shadow-lg text-sm"
+              className="px-5 py-2 text-sm rounded-full transition-all duration-200 border font-bold bg-[#E8DFF5] text-[#6B4C9A] border-[#A590D1] flex items-center hover:shadow-sm transform hover:scale-[1.01]"
             >
               <Plus className="h-4 w-4 mr-2" />
               {createButtonText}

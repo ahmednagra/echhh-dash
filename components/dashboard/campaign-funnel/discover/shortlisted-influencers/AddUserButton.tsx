@@ -2,6 +2,7 @@
 'use client';
 
 import { useState } from 'react';
+import ReactDOM from 'react-dom';
 import { UserPlus, X } from 'react-feather';
 import { Campaign } from '@/types/campaign';
 import { Platform } from '@/types/platform';
@@ -14,6 +15,7 @@ interface AddUserButtonProps {
   selectedPlatform?: Platform | null;
   onInfluencerAdded?: () => void;
   className?: string;
+  iconOnly?: boolean;
 }
 
 const AddUserButton: React.FC<AddUserButtonProps> = ({
@@ -21,10 +23,12 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
   selectedPlatform,
   onInfluencerAdded,
   className = '',
+  iconOnly = false,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [username, setUsername] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
 
   const handleOpenModal = () => {
     setIsModalOpen(true);
@@ -38,7 +42,6 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
   };
 
   const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Remove @ symbol if user types it
     const value = e.target.value.replace(/^@/, '');
     setUsername(value);
   };
@@ -87,26 +90,18 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
         added_through: 'search',
       };
 
-      console.log('Adding influencer manually with username:', request);
-
       const response = await addInfluencerToCampaign(request);
 
       if (response.success) {
         toast.success(`Successfully added @${username}`);
-
-        // Refresh the shortlisted members list
         onInfluencerAdded && onInfluencerAdded();
-
-        // Close modal
         handleCloseModal();
       } else {
-        console.error('Failed to add influencer:', response.message);
         toast.error(
           `Failed to add @${username}: ${response.message || 'Unknown error'}`,
         );
       }
     } catch (error) {
-      console.error('Error adding influencer:', error);
       const errorMessage =
         error instanceof Error ? error.message : 'An unexpected error occurred';
       toast.error(`Error adding @${username}: ${errorMessage}`);
@@ -119,35 +114,63 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
 
   return (
     <>
-      {/* Add User Button - Updated styling to match project buttons */}
-      <button
-        onClick={handleOpenModal}
-        disabled={isDisabled}
-        className={`flex items-center px-3 py-2 bg-gray-50 border border-blue-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-60 hover:border-blue-500 hover:shadow-md hover:shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ${className}`}
-        title={
-          isDisabled
-            ? 'Please select a platform first'
-            : 'Add influencer manually'
-        }
-      >
-        <UserPlus className="w-4 h-4 mr-1 text-gray-500" />
-        <span className="hidden sm:inline">Add</span>
-      </button>
+      {/* Add User Button */}
+      {iconOnly ? (
+        <div className="relative">
+          <button
+            onClick={handleOpenModal}
+            disabled={isDisabled}
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+            className={`p-2.5 rounded-xl border transition-all duration-200 ${
+              isDisabled
+                ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed opacity-50'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-purple-50 hover:text-purple-600 hover:border-purple-300 hover:shadow-md hover:shadow-purple-500/10'
+            } ${className}`}
+            title={isDisabled ? 'Select platform first' : 'Add Influencer'}
+          >
+            <UserPlus className="w-4 h-4" />
+          </button>
+          {/* Tooltip */}
+          {showTooltip && !isModalOpen && (
+            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 z-[9999] pointer-events-none">
+              <div className="px-2.5 py-1 text-xs font-medium bg-gray-900 text-white rounded-lg whitespace-nowrap shadow-lg">
+                {isDisabled ? 'Select platform' : 'Add Influencer'}
+              </div>
+              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+            </div>
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={handleOpenModal}
+          disabled={isDisabled}
+          className={`flex items-center px-3 py-2 bg-gray-50 border border-blue-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-60 hover:border-blue-500 hover:shadow-md hover:shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ${className}`}
+          title={
+            isDisabled
+              ? 'Please select a platform first'
+              : 'Add influencer manually'
+          }
+        >
+          <UserPlus className="w-4 h-4 mr-1 text-gray-500" />
+          <span className="hidden sm:inline">Add</span>
+        </button>
+      )}
 
-      {/* Modal Overlay - Transparent background to show page content */}
-      {isModalOpen && (
+{/* Modal with Portal - Renders at body level */}
+      {isModalOpen && typeof document !== 'undefined' && ReactDOM.createPortal(
         <div
-          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]"
           onClick={handleCloseModal}
         >
           <div
-            className="bg-white rounded-lg shadow-2xl max-w-md w-full mx-4 relative border border-gray-200"
-            onClick={(e) => e.stopPropagation()} // Prevent modal close when clicking inside
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 border border-gray-200 animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header - Matching reference design */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-r from-pink-500 to-purple-600 rounded-full flex items-center justify-center">
+                <div className="w-9 h-9 bg-gradient-to-r from-pink-500 to-purple-600 rounded-lg flex items-center justify-center">
                   <UserPlus className="w-4 h-4 text-white" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -156,7 +179,7 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
               </div>
               <button
                 onClick={handleCloseModal}
-                className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-full"
+                className="text-gray-400 hover:text-gray-600 transition-colors p-1.5 hover:bg-gray-100 rounded-lg"
                 disabled={isAdding}
               >
                 <X className="w-5 h-5" />
@@ -164,18 +187,17 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
             </div>
 
             {/* Modal Body */}
-            <div className="p-6">
+            <div className="p-5">
               <form onSubmit={handleAddToList} className="space-y-4">
                 <div>
                   <label
                     htmlFor="username"
                     className="block text-sm font-medium text-gray-700 mb-2"
                   >
-                    Add Influencer Username{' '}
-                    <span className="text-red-500">*</span>
+                    Username <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm font-medium">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm">
                       @
                     </span>
                     <input
@@ -185,43 +207,42 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
                       onChange={handleUsernameChange}
                       onKeyPress={handleKeyPress}
                       placeholder="Enter username"
-                      className="w-full pl-8 pr-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-colors text-sm"
+                      className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors text-sm"
                       disabled={isAdding}
                       autoFocus
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 mt-1.5">
                     Enter the username without the @ symbol
                   </p>
                 </div>
 
-                {/* Platform Info - Matching reference style */}
+                {/* Platform Info */}
                 {selectedPlatform && (
-                  <div className="p-3 bg-pink-50 rounded-md border border-pink-100">
+                  <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
                     <div className="flex items-center space-x-2 text-sm text-gray-700">
                       <img
                         src={selectedPlatform.logo_url}
                         alt={selectedPlatform.name}
-                        className="w-4 h-4 object-contain rounded-sm"
+                        className="w-5 h-5 object-contain rounded"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
-                          target.src =
-                            'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCAyMCAyMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiByeD0iMiIgZmlsbD0iIzZCNzI4MCIvPgo8L3N2Zz4K';
+                          target.style.display = 'none';
                         }}
                       />
-                      <span className="font-medium">
-                        Platform: {selectedPlatform.name}
+                      <span>
+                        Platform: <span className="font-medium">{selectedPlatform.name}</span>
                       </span>
                     </div>
                   </div>
                 )}
 
-                {/* Modal Footer - Updated button styling to match reference */}
-                <div className="flex justify-end space-x-3 pt-4">
+                {/* Modal Footer */}
+                <div className="flex justify-end space-x-3 pt-2">
                   <button
                     type="button"
                     onClick={handleCloseModal}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors font-medium text-sm"
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
                     disabled={isAdding}
                   >
                     Cancel
@@ -229,7 +250,7 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
                   <button
                     type="submit"
                     disabled={!username.trim() || isAdding}
-                    className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-md hover:from-pink-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center font-medium text-sm shadow-md hover:shadow-lg"
+                    className="px-5 py-2 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-lg hover:from-pink-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center font-medium text-sm shadow-md hover:shadow-lg"
                   >
                     {isAdding ? (
                       <>
@@ -247,7 +268,8 @@ const AddUserButton: React.FC<AddUserButtonProps> = ({
               </form>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

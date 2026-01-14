@@ -327,54 +327,6 @@ export const SOCIAL_PLATFORMS: Record<SocialPlatformType, SocialPlatformConfig> 
  */
 export type ContentPlatform = 'instagram' | 'tiktok' | 'youtube' | 'facebook' | 'linkedin';
 
-// /**
-//  * Internal Platform IDs (for FastAPI content-posts database table)
-//  * Source: public.platforms table primary keys
-//  */
-// export const PLATFORM_IDS = {
-//   INSTAGRAM: '3e3fec72-7a84-42db-bed3-a59ae757fb25',
-//   TIKTOK: 'a2e9a5b3-10b9-4d05-bbcc-768b4dd9d5e0',
-//   YOUTUBE: '4b35f9f6-1c97-4742-b4c3-fced7b324428',
-//   FACEBOOK: '3024ce7d-bd7f-4899-8913-9198354746ce',
-//   LINKEDIN: '15939698-e5e9-43a6-98d2-4551c7d0ee88',
-// } as const;
-
-// /**
-//  * InsightIQ Work Platform IDs (for 3rd party API calls)
-//  * Source: public.platforms table work_platform_id column
-//  */
-// export const WORK_PLATFORM_IDS = {
-//   INSTAGRAM: '9bb8913b-ddd9-430b-a66a-d74d846e6c66',
-//   TIKTOK: 'de55aeec-0dc8-4119-bf90-16b3d1f0c987',
-//   YOUTUBE: '14d9ddf5-51c6-415e-bde6-f8ed36ad7054',
-//   FACEBOOK: 'ad2fec62-2987-40a0-89fb-23485972598c',
-//   LINKEDIN: '36410629-f907-43ba-aa0d-434ca9c0501a',
-// } as const;
-
-// /**
-//  * Data Source Endpoint IDs (for tracking data origin)
-//  * These UUIDs must match the external_api_endpoints table in the database
-//  * 
-//  * INSIGHTIQ - External API for Instagram, TikTok, YouTube auto-fetch
-//  * MANUAL - Internal endpoint for Facebook, LinkedIn manual entry
-//  * 
-//  * IMPORTANT: After running backend DB initialization, replace MANUAL UUID with:
-//  * SELECT id FROM external_api_endpoints WHERE endpoint_code = 'INTERNAL_MANUAL_ENTRY';
-//  */
-// export const DATA_SOURCE_ENDPOINT_IDS = {
-//   /** InsightIQ API - Used for auto-fetching Instagram/TikTok/YouTube post data */
-//   // INSIGHTIQ: 'b52d214c-9f85-4a88-9db9-8bed10234b18',
-//   INSIGHTIQ: '938f25c5-eaf9-4a0d-930d-bc5f4181604d',
-  
-//   /** 
-//    * Internal Manual Entry - Used for Facebook/LinkedIn manual data entry
-//    * TODO: Replace this UUID after running DB initialization
-//    * Run: SELECT id FROM external_api_endpoints WHERE endpoint_code = 'INTERNAL_MANUAL_ENTRY';
-//    */
-//   // MANUAL: '692173aa-975f-45d9-805e-2057be9408c1',
-//   MANUAL: '692173aa-975f-45d9-805e-2057be9408c1',
-// } as const;
-
 /**
  * Platform URL patterns for auto-detection
  * Extended with Facebook and LinkedIn patterns

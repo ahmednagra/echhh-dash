@@ -16,7 +16,7 @@ import {
 } from 'react-feather';
 import { withRoleAccess } from '@/components/auth/withRoleAccess';
 import { getCampaignInfluencersForManager } from '@/services/outreach-manager-campaigns';
-import { getStatusList } from '@/services/statuses/statuses.service';
+import { getStatuses } from '@/services/statuses/statuses.client';
 import { AssignmentInfluencer } from '@/types/assignment-influencers';
 import { Status } from '@/types/statuses';
 import { AgentInfo } from '@/types/outreach-manager-campaigns';
@@ -60,9 +60,9 @@ function CampaignInfluencersPage() {
   // Fetch statuses on mount
   useEffect(() => {
     const fetchStatuses = async () => {
-      try {
+      try { 
         // ✅ FIXED: Pass 'campaign_influencer' as model parameter
-        const statusesData = await getStatusList('campaign_influencer');
+        const statusesData = await getStatuses('campaign_influencer', 'status_id');
         setAvailableStatuses(statusesData);
       } catch (err) {
         console.error('Failed to fetch statuses:', err);

@@ -11,7 +11,7 @@ import { fetchPlans } from '@/services/billing/plans';
 import type { Subscription } from '@/types/billing/subscription';
 import type { Company } from '@/types/company';
 import type { Plan } from '@/types/billing/plans';
-import { getStatuses } from '@/services/statuses/statuses.service';
+import { getStatuses } from '@/services/statuses/statuses.client';
 import type { Status } from '@/types/statuses';
 import {
   SubscriptionTable,

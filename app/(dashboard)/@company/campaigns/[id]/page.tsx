@@ -1,23 +1,32 @@
-// src/app/(dashboard)/campaigns/[id]/page.tsx
+// src/app/(dashboard)/@company/campaigns/[id]/page.tsx
+
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Share2 } from 'react-feather';
+import { useParams } from 'next/navigation';
+import { ArrowLeft } from 'react-feather';
 import Link from 'next/link';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import CampaignFunnelSection from '@/components/dashboard/campaign-funnel/CampaignFunnelSection';
 import DashboardMetricsSection from '@/components/dashboard/metrics/DashboardMetricsSection';
 import { useCampaigns } from '@/context/CampaignContext';
 import CampaignNotFound from '@/components/dashboard/campaigns/CampaignNotFound';
+import { ChatToggleButton } from '@/components/chat';
+import { CampaignTab } from '@/types/ai'; // Updated import
 
 export default function CampaignDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const campaignId = params?.id as string;
   const { getCampaign, currentCampaign, setCurrentCampaign } = useCampaigns();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  const [activeTab, setActiveTab] = useState<CampaignTab>('discover');
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  const toggleChat = () => {
+    setIsChatOpen(!isChatOpen);
+  };
 
   useEffect(() => {
     async function loadCampaign() {
@@ -29,11 +38,11 @@ export default function CampaignDetailPage() {
 
       try {
         setIsLoading(true);
-        setError(null); // Clear any previous errors
+        setError(null);
         
-        console.log('Loading campaign:', campaignId); // Debug log
+        console.log('Loading campaign:', campaignId);
         const campaign = await getCampaign(campaignId);
-        console.log('Campaign loaded:', campaign); // Debug log
+        console.log('Campaign loaded:', campaign);
         
         if (!campaign) {
           if (!/^[0-9a-f-]{32,36}$/i.test(campaignId)) {
@@ -50,23 +59,19 @@ export default function CampaignDetailPage() {
       }
     }
     
-    // Clear current campaign when switching to a different campaign
     if (currentCampaign && currentCampaign.id !== campaignId) {
       setCurrentCampaign(null);
     }
     
     loadCampaign();
     
-    // Cleanup function
     return () => {
-      // Only clear if we're unmounting completely, not just switching campaigns
       if (!campaignId) {
         setCurrentCampaign(null);
       }
     };
-  }, [campaignId]); // Removed getCampaign from dependencies to prevent re-runs
+  }, [campaignId]);
 
-  // Separate effect to handle current campaign changes
   useEffect(() => {
     if (currentCampaign && currentCampaign.id === campaignId) {
       setIsLoading(false);
@@ -100,49 +105,52 @@ export default function CampaignDetailPage() {
 
   return (
     <div className="w-full overflow-hidden px-2">
-      {/* MOVED: Stats & Performance Section - Now appears FIRST */}
+      {/* Stats & Performance Section - FULL WIDTH */}
       <div className="w-full overflow-hidden mb-4">
         <DashboardMetricsSection userType="platform"/>
       </div>
 
-      {/* Header with back button and actions - Now appears SECOND */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+      {/* Header with back button, campaign name, and chat toggle */}
+      <div className="flex items-center justify-between gap-4 mb-4">
         {/* Left side - Back button */}
         <div className="flex-shrink-0">
           <Link 
             href="/campaigns" 
-            className="inline-flex items-center text-gray-600 hover:text-purple-600 transition-colors"
+            className="inline-flex items-center text-gray-600 hover:text-purple-600 transition-colors group"
           >
-            <ArrowLeft className="h-4 w-4 mr-2 flex-shrink-0" />
+            <ArrowLeft className="h-4 w-4 mr-2 flex-shrink-0 group-hover:-translate-x-1 transition-transform" />
             <span className="truncate">Back to Campaigns</span>
           </Link>
         </div>
 
         {/* Center - Campaign Name */}
         <div className="flex-1 text-center">
-          <h1 className="text-2xl font-bold text-gray-800 truncate">{currentCampaign.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-800 truncate">
+            {currentCampaign.name}
+          </h1>
         </div>
         
-        {/* Right side - Share button (commented out) */}
-        {/* 
+        {/* Right side - Chat Toggle Button */}
         <div className="flex-shrink-0">
-          <button className="flex items-center bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors">
-            <Share2 className="h-4 w-4 mr-2" />
-            Share
-          </button>
+          <ChatToggleButton 
+            onClick={toggleChat}
+            isOpen={isChatOpen}
+          />
         </div>
-        */}
-        
-        {/* Empty div to maintain flex layout balance */}
-        <div className="flex-shrink-0 w-20"></div>
       </div>
 
-      {/* Main content - Campaign Funnel */}
+      {/* Campaign Funnel with integrated Chat Sidebar */}
       <div className="w-full overflow-hidden">
         <CampaignFunnelSection 
           userType="b2c" 
           campaignData={currentCampaign} 
           isNewCampaign={false}
+          onTabChange={(tab) => setActiveTab(tab as CampaignTab)}
+          // Pass chat-related props
+          campaignId={campaignId}
+          showChat={true}
+          isChatOpen={isChatOpen}
+          onChatToggle={toggleChat}
         />
       </div>
     </div>

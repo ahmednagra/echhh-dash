@@ -17,6 +17,8 @@ import {
 } from '@/components/dashboard/campaigns';
 import CampaignsHeaderWithTrash from '@/components/dashboard/campaigns/CampaignsHeaderWithTrash';
 import DeleteConfirmationModal from '@/components/dashboard/campaigns/DeleteConfirmationModal';
+import CampaignsTable from '@/components/dashboard/campaigns/CampaignsTable';
+import { Grid, List } from 'react-feather';
 
 interface DeleteModalState {
   isOpen: boolean;
@@ -54,6 +56,9 @@ function CampaignsPage() {
     isOpen: false,
     campaign: null
   });
+
+  // View mode state (grid or table)
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
   // Handle delete campaign click (for active campaigns)
   const handleDeleteClick = (campaign: Campaign, e: React.MouseEvent) => {
@@ -198,6 +203,34 @@ function CampaignsPage() {
           onSearchClick={handleSearchClick}
         />
 
+        {/* View Mode Toggle */}
+        <div className="flex justify-end mb-4">
+          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-full">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full transition-all duration-200 ${
+                viewMode === 'table'
+                  ? 'font-bold bg-white text-gray-800 shadow-sm'
+                  : 'font-medium text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <List className="w-4 h-4" />
+              Table
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full transition-all duration-200 ${
+                viewMode === 'grid'
+                  ? 'font-bold bg-white text-gray-800 shadow-sm'
+                  : 'font-medium text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <Grid className="w-4 h-4" />
+              Grid
+            </button>
+          </div>
+        </div>
+
         {/* Error Messages */}
         {/* {currentError && (
           <ErrorMessage
@@ -218,19 +251,32 @@ function CampaignsPage() {
           />
         )}
 
-        {/* Main Content - Same Grid Layout for Both Views */}
+        {/* Main Content - Grid or Table View */}
         {currentHasResults && currentCampaigns.length > 0 ? (
-          <CampaignsGrid
-            campaigns={currentCampaigns}
-            onDeleteCampaign={handleDeleteClick}
-            onEditCampaign={handleEditClick}
-            onRestoreCampaign={handleRestoreClick}
-            showDeleteButtons={!isTrashView}
-            showEditButtons={!isTrashView}
-            showRestoreButtons={isTrashView}
-            continueButtonText="Continue"
-            isTrashView={isTrashView}
-          />
+          viewMode === 'grid' ? (
+            <CampaignsGrid
+              campaigns={currentCampaigns}
+              onDeleteCampaign={handleDeleteClick}
+              onEditCampaign={handleEditClick}
+              onRestoreCampaign={handleRestoreClick}
+              showDeleteButtons={!isTrashView}
+              showEditButtons={!isTrashView}
+              showRestoreButtons={isTrashView}
+              continueButtonText="Continue"
+              isTrashView={isTrashView}
+            />
+          ) : (
+            <CampaignsTable
+              campaigns={currentCampaigns}
+              onDeleteCampaign={handleDeleteClick}
+              onEditCampaign={handleEditClick}
+              onRestoreCampaign={handleRestoreClick}
+              showDeleteButtons={!isTrashView}
+              showEditButtons={!isTrashView}
+              showRestoreButtons={isTrashView}
+              isTrashView={isTrashView}
+            />
+          )
         ) : (
           <CampaignsEmptyState
             searchQuery={searchQuery}
