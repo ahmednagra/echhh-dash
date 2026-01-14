@@ -23,6 +23,26 @@ export {
   useInvalidateCampaignInfluencers,
 } from './useCampaignInfluencers';
 
+// External API Endpoints
+export {
+  useActiveExternalApiEndpoints,
+  useExternalApiEndpointByCode,
+  useDataSourceEndpointId,
+  useInsightIQEndpoint,
+  useManualEntryEndpoint,
+} from './useExternalApiEndpoints';
+
+// Platform Config
+export {
+  usePlatformConfig,
+  usePlatformId,
+  useWorkPlatformId,
+  useDataSourceEndpoint,
+  fetchPlatformConfig,
+  getDynamicPlatformIdAsync,
+  getDynamicDataSourceEndpointIdAsync,
+} from './usePlatformConfig';
+
 // ============================================
 // Future exports (add as you implement)
 // ============================================

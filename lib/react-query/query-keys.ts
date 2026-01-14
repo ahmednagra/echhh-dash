@@ -133,6 +133,22 @@ export const queryKeys = {
     campaign: (campaignId: string) => 
       [...queryKeys.analytics.all, 'campaign', campaignId] as const,
   },
+  // ============================================
+  // EXTERNAL API ENDPOINTS
+  // ============================================
+    externalApiEndpoints: {
+      all: ['external-api-endpoints'] as const,
+      active: () => ['external-api-endpoints', 'active'] as const,
+      byCode: (code: string) => ['external-api-endpoints', 'code', code] as const,
+    },
+
+  // ============================================
+  // PLATFORMS
+  // ============================================
+    platforms: {
+      all: ['platforms'] as const,
+      active: () => ['platforms', 'active'] as const,
+    },
 } as const;
 
 /**

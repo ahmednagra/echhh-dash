@@ -1921,3 +1921,110 @@ export const buildFormDataFromAPIResponse = (
     description: postData.caption || originalFormData.description,
   };
 };
+
+// ============================================================================
+// SECTION 10: ADDVIDEOMODAL UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Determine content type based on platform and URL
+ * Used by: AddVideoModal for both manual and API flows
+ */
+export const determineContentType = (
+  platform: ContentPlatform,
+  url: string,
+  isVideo: boolean
+): string => {
+  const u = url.toLowerCase();
+  if (u.includes('/shorts/')) return 'shorts';
+  if (/\/reels?\//.test(u)) return platform === 'facebook' ? 'facebook_reel' : 'reel';
+  if (u.includes('/stories/')) return 'story';
+
+  const VIDEO_TYPE_MAP: Record<ContentPlatform, string> = {
+    youtube: 'video', tiktok: 'video', facebook: 'facebook_video',
+    linkedin: 'linkedin_video', instagram: 'reel',
+  };
+  const POST_TYPE_MAP: Record<ContentPlatform, string> = {
+    facebook: 'facebook_post', linkedin: 'linkedin_post',
+    instagram: 'post', tiktok: 'post', youtube: 'post',
+  };
+
+  return isVideo ? VIDEO_TYPE_MAP[platform] || 'reel' : POST_TYPE_MAP[platform] || 'post';
+};
+
+/**
+ * Determine content format based on URL and video flag
+ * Used by: AddVideoModal
+ */
+export const determineContentFormat = (url: string, isVideo: boolean): string =>
+  url.toLowerCase().includes('/stories/') ? 'STORY' : isVideo ? 'VIDEO' : 'IMAGE';
+
+/**
+ * Build full content URL from shortcode/ID if needed
+ * Used by: AddVideoModal for manual entry
+ */
+export const buildContentUrl = (url: string, platform: ContentPlatform): string => {
+  if (url.startsWith('http')) return url;
+
+  const URL_BUILDERS: Record<ContentPlatform, (id: string) => string> = {
+    youtube: (id) => `https://www.youtube.com/watch?v=${id}`,
+    tiktok: (id) => `https://www.tiktok.com/video/${id}`,
+    facebook: (id) => `https://www.facebook.com/videos/${id}`,
+    linkedin: (id) => `https://www.linkedin.com/posts/${id}`,
+    instagram: (id) => `https://www.instagram.com/p/${id}/`,
+  };
+
+  return URL_BUILDERS[platform]?.(url) || url;
+};
+
+/**
+ * Extract hashtags from text
+ * Used by: AddVideoModal for API-fetched content
+ */
+export const extractHashtags = (text: string): string[] =>
+  (text.match(/#\w+/g) || []).map((t) => t.slice(1));
+
+/**
+ * Extract mentions from text
+ * Used by: AddVideoModal for API-fetched content
+ */
+export const extractMentions = (text: string): string[] =>
+  (text.match(/@\w+/g) || []).map((m) => m.slice(1));
+
+/**
+ * Parse API error into user-friendly message
+ * Used by: AddVideoModal error handling
+ */
+export const parseApiError = (error: unknown): { message: string; details: string } => {
+  const msg = error instanceof Error ? error.message : 'Unknown error';
+
+  const ERROR_MAPPINGS: Array<{ pattern: RegExp; message: string; details: string }> = [
+    { pattern: /409|already exists/i, message: 'Duplicate Post Detected', details: 'This post has already been added to your campaign.' },
+    { pattern: /404.*endpoint/i, message: 'Resource Not Found', details: 'Manual entry endpoint not configured.' },
+    { pattern: /404.*platform/i, message: 'Resource Not Found', details: 'Platform not recognized.' },
+    { pattern: /404.*influencer/i, message: 'Resource Not Found', details: 'Selected influencer not found.' },
+    { pattern: /404|not found/i, message: 'Resource Not Found', details: 'The requested resource could not be found.' },
+    { pattern: /401|unauthorized/i, message: 'Authentication Error', details: 'Your session may have expired.' },
+    { pattern: /400/, message: 'Invalid Request', details: 'Please check all fields and try again.' },
+    { pattern: /500/, message: 'Server Error', details: 'Something went wrong. Please try again later.' },
+  ];
+
+  return ERROR_MAPPINGS.find(({ pattern }) => pattern.test(msg)) || { message: 'Failed to Save Video', details: msg };
+};
+
+/**
+ * Validate Instagram shortcode format
+ * Used by: AddVideoModal URL validation
+ */
+export const isValidInstagramCode = (value: string): boolean =>
+  /^[a-zA-Z0-9_-]+$/.test(value) && value.length > 5;
+
+// ============================================================================
+// ALSO ADD THIS TYPE ALIAS for backward compatibility
+// ============================================================================
+
+/**
+ * Type alias for InitialMetadataInput (used by buildUnifiedInitialMetadata)
+ * Provides consistent naming across components
+ */
+export type InitialMetadataParams = InitialMetadataInput;
